@@ -11,10 +11,33 @@ const emit = defineEmits(['join', 'leave', 'delete'])
 
 const copyTripLink = async () => {
   try {
-    await navigator.clipboard.writeText(window.location.href)
-    toast.success('Посилання скопійовано! Відправте його друзям.')
+    // localhost HTTPS
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('Посилання скопійовано! Відправте його друзям.')
+      return
+    }
+
+    // HTTP
+    const textArea = document.createElement("textarea")
+    textArea.value = window.location.href
+    
+    textArea.style.position = "absolute"
+    textArea.style.opacity = "0"
+    
+    document.body.appendChild(textArea)
+    textArea.select()
+    
+    const successful = document.execCommand('copy')
+    textArea.remove()
+
+    if (successful) {
+      toast.success('Посилання скопійовано! Відправте його друзям.')
+    } else {
+      throw new Error('Копіювання заблоковано браузером')
+    }
   } catch (error) {
-    toast.error('Не вдалося скопіювати посилання.')
+    toast.error('Браузер заблокував копіювання. Просто скопіюйте посилання з адресного рядка.')
   }
 }
 </script>
