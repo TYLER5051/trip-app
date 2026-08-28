@@ -27,13 +27,13 @@ const fetchTripData = async () => {
   try {
     const [tripRes, catRes] = await Promise.all([
       // Запит за поїздкою (тут токен вже є)
-      fetch(`http://localhost:8000/trips/${tripId}`, {
+      fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       }),
       // ДОДАЄМО ТОКЕН СЮДИ ДЛЯ КАТЕГОРІЙ!
-      fetch(`http://localhost:8000/trips/${tripId}/categories/`, {
+      fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
     ])
@@ -84,7 +84,7 @@ const removeParticipant = async (participantId) => {
 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`http://localhost:8000/trips/${tripId}/participants/${participantId}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/participants/${participantId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     })
@@ -100,7 +100,7 @@ const removeParticipant = async (participantId) => {
 const joinTrip = async () => {
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`http://localhost:8000/trips/${tripId}/join`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/join`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     })
@@ -120,7 +120,7 @@ const leaveTrip = async () => {
 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`http://localhost:8000/trips/${tripId}/leave`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/leave`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     })
@@ -141,7 +141,7 @@ const leaveTrip = async () => {
 const createCategory = async (categoryName) => { 
   const token = localStorage.getItem('access_token')
   try {
-    const response = await fetch(`http://localhost:8000/trips/${tripId}/categories/`, {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -166,7 +166,7 @@ const createCategory = async (categoryName) => {
 const addItem = async (payload) => { 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch('http://localhost:8000/items/', {
+    const res = await fetch('${import.meta.env.VITE_API_URL}/items/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -194,7 +194,7 @@ const toggleItemAssignment = async (item) => {
   const isAssigned = !!item.assigned_user
   
   try {
-    const res = await fetch(`http://localhost:8000/items/${item.id}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${item.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -223,7 +223,7 @@ const deleteItem = async (itemId) => {
 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`http://localhost:8000/items/${itemId}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${itemId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     })
@@ -241,7 +241,7 @@ const deleteTrip = async () => {
 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`http://localhost:8000/trips/${tripId}`, {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     })
