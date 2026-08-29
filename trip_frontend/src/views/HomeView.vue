@@ -13,7 +13,7 @@ const createError = ref('')
 const fetchTrips = async () => {
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch('${import.meta.env.VITE_API_URL}/trips/', {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -37,7 +37,7 @@ const createTrip = async () => {
   const token = localStorage.getItem('access_token')
 
   try {
-    const response = await fetch('${import.meta.env.VITE_API_URL}/trips/', {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/trips/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

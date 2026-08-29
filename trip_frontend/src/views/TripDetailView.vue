@@ -166,7 +166,7 @@ const createCategory = async (categoryName) => {
 const addItem = async (payload) => { 
   const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch('${import.meta.env.VITE_API_URL}/items/', {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
