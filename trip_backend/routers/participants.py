@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from routers.authentication import get_current_user
+from deps import get_current_user
 import models, schemas
 
 router = APIRouter(prefix="/trips")
@@ -12,15 +12,15 @@ def join_trip(
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
 ):
-    trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    trip = db.get(models.Trip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
     
     if current_user in trip.participants:
-        raise HTTPException(status_code=400, detail="You are already a participant of this trip")
+        raise HTTPException(status_code=400, detail="Ви вже є учасником цієї поїздки")
     
     if trip.owner_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Owner cannot join their own trip as a participant")
+        raise HTTPException(status_code=400, detail="Організатор не може бути учасником власної поїздки")
 
     trip.participants.append(current_user)
     db.commit()
@@ -37,7 +37,7 @@ def remove_participant(
     current_user: models.User = Depends(get_current_user)
 ):
     trip_db = db.get(models.Trip, trip_id)
-    if not trip_db:
+    if trip_db is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
     
     if trip_db.owner_id != current_user.id:
@@ -55,7 +55,7 @@ def remove_participant(
     for item in trip_db.items:
         if item.assigned_user_id == user_to_remove.id:
             item.assigned_user_id = None
-            item.is_packed = False 
+            item.is_packed = False
             
     db.commit()
     
@@ -69,7 +69,7 @@ def leave_trip(
     current_user: models.User = Depends(get_current_user)
 ):
     trip_db = db.get(models.Trip, trip_id)
-    if not trip_db:
+    if trip_db is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
     
     if current_user not in trip_db.participants:
@@ -83,6 +83,7 @@ def leave_trip(
     for item in trip_db.items:
         if item.assigned_user_id == current_user.id:
             item.assigned_user_id = None
+            item.is_packed = False
             
     db.commit()
     
