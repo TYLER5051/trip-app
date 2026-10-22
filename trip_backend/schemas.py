@@ -30,17 +30,17 @@ class ItemBase(BaseModel):
 
 class ItemCreate(ItemBase):
     trip_id: int
-    category_id: int  
+    category_id: int
 
-class ItemUpdate(ItemBase):
+class ItemUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
     is_packed: Optional[bool] = None
-    assigned_user_id: Optional[int] = None  
 
 class ItemResponse(ItemBase):
     id: int
-    category: CategoryResponse 
-    assigned_user: Optional[UserResponse] = None  
+    category_id: int
+    category: CategoryResponse
+    assigned_user: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -52,7 +52,7 @@ class TripCreate(TripBase):
 
 class TripResponse(TripBase):
     id: int
-    owner: UserResponse  
-    participants: List[UserResponse] = []  
-    items: List[ItemResponse] = [] 
+    owner: UserResponse
+    participants: List[UserResponse] = Field(default_factory=list)
+    items: List[ItemResponse] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
