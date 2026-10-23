@@ -18,7 +18,7 @@ class User(Base):
 
     owned_trips = relationship("Trip", back_populates="owner")
     participating_trips = relationship("Trip", secondary=trip_users, back_populates="participants")
-    items_to_bring = relationship("Item", back_populates="assigned_user")
+    items_to_bring = relationship("Item", foreign_keys="Item.assigned_user_id", back_populates="assigned_user")
 
 
 class Trip(Base):
@@ -55,7 +55,9 @@ class Item(Base):
     category_id = Column(Integer, ForeignKey("categories.id"))
     
     assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     trip = relationship("Trip", back_populates="items")
     category = relationship("Category", back_populates="items")
-    assigned_user = relationship("User", back_populates="items_to_bring")
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id], back_populates="items_to_bring")
+    created_by = relationship("User", foreign_keys=[created_by_id])

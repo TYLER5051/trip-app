@@ -41,6 +41,7 @@ class ItemResponse(ItemBase):
     category_id: int
     category: CategoryResponse
     assigned_user: Optional[UserResponse] = None
+    created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
 

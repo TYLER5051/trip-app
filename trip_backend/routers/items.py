@@ -30,7 +30,8 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current
         name=item.name,
         is_packed=False,
         trip_id=trip.id,
-        category_id=category.id
+        category_id=category.id,
+        created_by_id=current_user.id
     )
     db.add(db_item)
     db.commit()
@@ -57,10 +58,10 @@ def update_item(
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     if item_update.name is not None:
-        if trip.owner_id != current_user.id and item.assigned_user_id != current_user.id:
+        if trip.owner_id != current_user.id and item.created_by_id != current_user.id:
             raise HTTPException(
                 status_code=403,
-                detail="Ви можете перейменовувати лише свої речі"
+                detail="Ви можете перейменовувати лише власні речі (створені вами)"
             )
         item.name = item_update.name
 
@@ -95,8 +96,8 @@ def delete_item(item_id: int, db: Session = Depends(get_db), current_user: model
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    if trip.owner_id != current_user.id and item.assigned_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Ви можете видаляти лише свої речі")
+    if trip.owner_id != current_user.id and item.created_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
     
     db.delete(item)
     db.commit()
