@@ -217,7 +217,38 @@ const toggleItemAssignment = async (item) => {
   }
 }
 
-// Видалення речі (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
+// Перейменування речі (тільки організатор або автор речі)
+const renameItem = async ({ id, name }) => {
+  const token = localStorage.getItem('access_token')
+
+  if (!name || name.trim().length < 2) {
+    toast.error('Назва речі має містити щонайменше 2 символи')
+    return
+  }
+
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: name.trim() })
+    })
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData.detail || 'Не вдалося перейменувати річ')
+    }
+
+    await fetchTripData()
+    toast.success('Річ перейменовано.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
+// Видалення речі (тільки організатор або автор речі)
 const deleteItem = async (itemId) => {
   if (!confirm('Видалити цю річ зі списку?')) return
 
@@ -228,8 +259,12 @@ const deleteItem = async (itemId) => {
       headers: { 'Authorization': `Bearer ${token}` }
     })
 
-    if (!res.ok) throw new Error('Не вдалося видалити річ')
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData.detail || 'Не вдалося видалити річ')
+    }
     await fetchTripData()
+    toast.success('Річ видалено.')
   } catch (error) {
     toast.error(error.message)
   }
@@ -299,6 +334,7 @@ onMounted(() => {
         :ownerUsername="trip.owner?.username"
         @toggle="toggleItemAssignment"
         @delete="deleteItem"
+        @rename="renameItem"
       />
     </div>
     

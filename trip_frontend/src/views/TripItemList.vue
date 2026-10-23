@@ -1,57 +1,131 @@
 <script setup>
+import { ref, nextTick } from 'vue'
+
 const props = defineProps({
   groupedItems: { type: Object, required: true },
   currentUser: { type: String, required: true },
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete'])
+const emit = defineEmits(['toggle', 'delete', 'rename'])
+
+// Стан редагування назви речі
+const editingId = ref(null)
+const draftName = ref('')
+const renameInput = ref(null)
+
+// Право на перейменування/видалення має організатор або автор речі (не той, хто взяв)
+const canModifyItem = (item) => {
+  const isOwner = props.ownerUsername === props.currentUser
+  const isCreator = item.created_by && item.created_by.username === props.currentUser
+  return isOwner || isCreator
+}
+
+const isEditing = (item) => editingId.value === item.id
+
+const startRename = async (item) => {
+  draftName.value = item.name
+  editingId.value = item.id
+  await nextTick()
+  renameInput.value?.focus()
+}
+
+const cancelRename = () => {
+  editingId.value = null
+  draftName.value = ''
+}
+
+const saveRename = (item) => {
+  const trimmed = draftName.value.trim()
+  if (!trimmed) {
+    cancelRename()
+    return
+  }
+  if (trimmed !== item.name) {
+    emit('rename', { id: item.id, name: trimmed })
+  }
+  cancelRename()
+}
 </script>
 
 <template>
   <div class="items-section">
     <h3>Список речей</h3>
-    
+
     <!-- Якщо немає жодної категорії в згрупованих речах, значить список порожній -->
     <div v-if="Object.keys(groupedItems).length === 0" class="empty">
       У цій поїздці поки немає жодної речі.
     </div>
-    
+
     <div v-else>
       <div v-for="(items, categoryName) in groupedItems" :key="categoryName" class="category-group">
         <h4 class="category-title"> {{ categoryName }}</h4>
         <ul class="items-list">
           <li v-for="item in items" :key="item.id" class="item-row">
-            
+
             <!-- Ліва частина речі (чекбокс і ім'я) -->
             <div class="item-content">
               <label class="item-label">
-                <input 
-                  type="checkbox" 
-                  :checked="!!item.assigned_user" 
+                <input
+                  type="checkbox"
+                  :checked="!!item.assigned_user"
                   @change="emit('toggle', item)"
-                  :disabled="!!item.assigned_user && item.assigned_user.username !== currentUser && ownerUsername !== currentUser" 
+                  :disabled="!!item.assigned_user && item.assigned_user.username !== currentUser && ownerUsername !== currentUser"
                 />
                 <span class="item-name" :class="{ assigned: !!item.assigned_user }">
                   {{ item.name }}
                 </span>
               </label>
-              
+
+              <span v-if="item.created_by" class="creator-badge">
+                Автор: {{ item.created_by.username }}
+              </span>
               <span v-if="item.assigned_user" class="assignee-badge">
                 Взяв(ла): {{ item.assigned_user.username }}
               </span>
             </div>
 
-            <!-- Кнопка видалення (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА) -->
-            <button 
-              v-if="ownerUsername === currentUser" 
-              @click="emit('delete', item.id)" 
+            <!-- Блок перейменування: для організатора або автора речі -->
+            <div v-if="canModifyItem(item)" class="rename-section">
+              <div v-if="isEditing(item)" class="rename-editor">
+                <input
+                  ref="renameInput"
+                  v-model="draftName"
+                  type="text"
+                  class="rename-input"
+                  placeholder="Нова назва..."
+                  @keyup.enter="saveRename(item)"
+                  @keyup.esc="cancelRename"
+                />
+                <button
+                  class="rename-action save"
+                  title="Зберегти"
+                  @click="saveRename(item)"
+                >✓</button>
+                <button
+                  class="rename-action cancel"
+                  title="Скасувати"
+                  @click="cancelRename"
+                >✕</button>
+              </div>
+              <button
+                v-else
+                class="rename-action"
+                title="Перейменувати"
+                @click="startRename(item)"
+              >✏️</button>
+            </div>
+
+            <!-- Кнопка видалення: для організатора або автора речі -->
+            <button
+              v-if="canModifyItem(item)"
+              @click="emit('delete', item.id)"
               class="delete-item-btn"
               title="Видалити річ"
             >
               ❌
             </button>
-            
+
           </li>
         </ul>
       </div>
@@ -122,27 +196,79 @@ const emit = defineEmits(['toggle', 'delete'])
   font-size: 13px;
   font-weight: bold;
 }
+.creator-badge {
+  background-color: #fdf2e3;
+  color: #b9770e;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 13px;
+  font-weight: bold;
+}
 .empty {
   text-align: center;
   color: #666;
   margin-top: 20px;
 }
-.item-content { 
-  display: flex; 
-  align-items: center; 
-  gap: 12px; 
-  flex: 1; 
+.item-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
 }
-.delete-item-btn { 
-  background: none; 
-  border: none; 
-  font-size: 16px; 
-  cursor: pointer; 
-  opacity: 0.5; 
-  transition: opacity 0.2s; 
-  padding: 4px; 
+.delete-item-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  padding: 4px;
 }
-.delete-item-btn:hover { 
-  opacity: 1; 
+.delete-item-btn:hover {
+  opacity: 1;
+}
+.rename-section {
+  margin-left: auto;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+}
+.rename-editor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rename-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+.rename-action:hover {
+  opacity: 1;
+  background-color: #eef2f5;
+}
+.rename-action.save {
+  color: #27ae60;
+  font-weight: bold;
+}
+.rename-action.cancel {
+  color: #e74c3c;
+  font-weight: bold;
+}
+.rename-input {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 150px;
+}
+.rename-input:focus {
+  outline: none;
+  border-color: #42b883;
 }
 </style>
