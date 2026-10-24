@@ -3,21 +3,38 @@ import { ref, nextTick } from 'vue'
 
 const props = defineProps({
   groupedItems: { type: Object, required: true },
+  categories: { type: Array, required: true },
   currentUser: { type: String, required: true },
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete', 'rename'])
+const emit = defineEmits(['toggle', 'delete', 'rename', 'rename-category', 'delete-category'])
 
 // Стан редагування назви речі
 const editingId = ref(null)
 const draftName = ref('')
 const renameInput = ref(null)
 
+// Стан редагування назви категорії
+const editingCategoryId = ref(null)
+const categoryDraftName = ref('')
+const categoryRenameInput = ref(null)
+
 // Право на перейменування/видалення має організатор або автор речі (не той, хто взяв)
 const canModifyItem = (item) => {
   const isOwner = props.ownerUsername === props.currentUser
   const isCreator = item.created_by && item.created_by.username === props.currentUser
+  return isOwner || isCreator
+}
+
+// Знайти об'єкт категорії за назвою групи (назви унікальні в межах поїздки)
+const catFor = (name) => props.categories.find(c => c.name === name)
+
+// Категорію (як і річ) може змінювати/видаляти лише її автор або організатор
+const canModifyCategory = (cat) => {
+  if (!cat) return false
+  const isOwner = props.ownerUsername === props.currentUser
+  const isCreator = cat.created_by && cat.created_by.username === props.currentUser
   return isOwner || isCreator
 }
 
@@ -46,6 +63,32 @@ const saveRename = (item) => {
   }
   cancelRename()
 }
+
+const isCategoryEditing = (cat) => editingCategoryId.value === cat.id
+
+const startCategoryRename = async (cat) => {
+  categoryDraftName.value = cat.name
+  editingCategoryId.value = cat.id
+  await nextTick()
+  categoryRenameInput.value?.focus()
+}
+
+const cancelCategoryRename = () => {
+  editingCategoryId.value = null
+  categoryDraftName.value = ''
+}
+
+const saveCategoryRename = (cat) => {
+  const trimmed = categoryDraftName.value.trim()
+  if (!trimmed) {
+    cancelCategoryRename()
+    return
+  }
+  if (trimmed !== cat.name) {
+    emit('rename-category', { id: cat.id, name: trimmed })
+  }
+  cancelCategoryRename()
+}
 </script>
 
 <template>
@@ -59,7 +102,46 @@ const saveRename = (item) => {
 
     <div v-else>
       <div v-for="(items, categoryName) in groupedItems" :key="categoryName" class="category-group">
-        <h4 class="category-title"> {{ categoryName }}</h4>
+        <div class="category-header">
+          <h4 class="category-title"> {{ categoryName }}</h4>
+          <div v-if="catFor(categoryName)" class="category-actions">
+            <template v-if="isCategoryEditing(catFor(categoryName))">
+              <input
+                ref="categoryRenameInput"
+                v-model="categoryDraftName"
+                type="text"
+                class="rename-input"
+                placeholder="Нова назва..."
+                @keyup.enter="saveCategoryRename(catFor(categoryName))"
+                @keyup.esc="cancelCategoryRename"
+              />
+              <button
+                class="cat-action save"
+                title="Зберегти"
+                @click="saveCategoryRename(catFor(categoryName))"
+              >✓</button>
+              <button
+                class="cat-action cancel"
+                title="Скасувати"
+                @click="cancelCategoryRename"
+              >✕</button>
+            </template>
+            <template v-else>
+              <button
+                v-if="canModifyCategory(catFor(categoryName))"
+                class="cat-action"
+                title="Перейменувати категорію"
+                @click="startCategoryRename(catFor(categoryName))"
+              >✏️</button>
+              <button
+                v-if="canModifyCategory(catFor(categoryName))"
+                class="cat-action"
+                title="Видалити категорію"
+                @click="emit('delete-category', catFor(categoryName))"
+              >❌</button>
+            </template>
+          </div>
+        </div>
         <ul class="items-list">
           <li v-for="item in items" :key="item.id" class="item-row">
 
@@ -142,6 +224,38 @@ const saveRename = (item) => {
 }
 .category-group {
   margin-bottom: 20px;
+}
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.category-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.cat-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+.cat-action:hover {
+  opacity: 1;
+  background-color: #e2e6ea;
+}
+.cat-action.save {
+  color: #27ae60;
+  font-weight: bold;
+}
+.cat-action.cancel {
+  color: #e74c3c;
+  font-weight: bold;
 }
 .category-title {
   background-color: #f8f9fa;

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   categories: { type: Array, required: true }
@@ -12,10 +12,31 @@ const newItemName = ref('')
 const selectedCategoryId = ref('')
 const newCategoryName = ref('')
 const showCategoryForm = ref(false)
+const itemNameInput = ref(null)
+// Назва щойно створеної категорії, яку треба автоматично обрати у випадаючому списку
+const pendingNewCategory = ref('')
 
 
 watch(() => props.categories, (newCats) => {
-  if (newCats && newCats.length > 0 && !selectedCategoryId.value) {
+  if (!newCats) return
+
+  // 1) Щойно створену категорію — одразу вибираємо у списку
+  if (pendingNewCategory.value) {
+    const created = newCats.find(c => c.name === pendingNewCategory.value)
+    if (created) {
+      selectedCategoryId.value = created.id
+      pendingNewCategory.value = ''
+      // Фокус на назву речі, щоб одразу вводити, напр., "Сокира"
+      nextTick(() => itemNameInput.value?.focus())
+      return
+    }
+    // Категорія ще не з'явилась (fetch триває) — чекаємо наступного оновлення
+    return
+  }
+
+  // 2) Якщо вибраної категорії вже немає в списку (напр., її видалили) —
+  //    повертаємось до першої, щоб у select не лишалась "мертва" категорія
+  if (newCats.length > 0 && !newCats.some(c => c.id === selectedCategoryId.value)) {
     selectedCategoryId.value = newCats[0].id
   }
 }, { immediate: true })
@@ -32,10 +53,20 @@ const submitItem = () => {
 }
 
 const submitCategory = () => {
-  if (!newCategoryName.value.trim()) return
-  
-  emit('create-category', newCategoryName.value)
-  
+  const name = newCategoryName.value.trim()
+  if (!name) return
+
+  // Позначаємо, яку категорію треба обрати після того, як вона з'явиться у списку
+  const exists = props.categories.some(c => c.name === name)
+  if (exists) {
+    const existing = props.categories.find(c => c.name === name)
+    selectedCategoryId.value = existing.id
+  } else {
+    pendingNewCategory.value = name
+  }
+
+  emit('create-category', name)
+
   newCategoryName.value = '' 
   showCategoryForm.value = false 
 }
@@ -46,7 +77,7 @@ const submitCategory = () => {
     <h3>Додати річ у список</h3>
     
     <form @submit.prevent="submitItem" class="item-form">
-      <input type="text" v-model="newItemName" placeholder="Назва речі (напр., Намет)" required />
+      <input ref="itemNameInput" type="text" v-model="newItemName" placeholder="Назва речі (напр., Намет)" required />
       <select v-model="selectedCategoryId">
         <option v-for="cat in categories" :key="cat.id" :value="cat.id">
           {{ cat.name }}
