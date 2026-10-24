@@ -21,8 +21,11 @@ class CategoryCreate(CategoryBase):
 class CategoryResponse(CategoryBase):
     id: int
     trip_id: int
+    created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
+class CategoryUpdate(CategoryBase):
+    pass
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=2, max_length=100)
@@ -38,8 +41,8 @@ class ItemUpdate(BaseModel):
 
 class ItemResponse(ItemBase):
     id: int
-    category_id: int
-    category: CategoryResponse
+    category_id: Optional[int] = None
+    category: Optional[CategoryResponse] = None
     assigned_user: Optional[UserResponse] = None
     created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)

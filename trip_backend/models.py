@@ -39,9 +39,11 @@ class Category(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     trip_id = Column(Integer, ForeignKey("trips.id"))
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     items = relationship("Item", back_populates="category")
     trip = relationship("Trip", back_populates="categories")
+    created_by = relationship("User", foreign_keys=[created_by_id])
 
 
 class Item(Base):
