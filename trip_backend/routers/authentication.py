@@ -23,9 +23,12 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login")
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Неправильний логін або пароль")
-    
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="Користувача з таким логіном не знайдено. Спочатку зареєструйтесь.")
+
+    if not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Неправильний пароль")
+
     access_token = auth.create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}

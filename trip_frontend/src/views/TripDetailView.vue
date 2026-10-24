@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
+import api from '../services/api'
 import TripHeader from './TripHeader.vue'
 import TripParticipants from './TripParticipants.vue'
 import TripItemForm from './TripItemForm.vue'
@@ -22,32 +23,13 @@ const currentUser = localStorage.getItem('username')
 
 // Завантаження даних поїздки та категорій
 const fetchTripData = async () => {
-  const token = localStorage.getItem('access_token') // 1. Дістаємо токен
-
   try {
-    const [tripRes, catRes] = await Promise.all([
-      // Запит за поїздкою (тут токен вже є)
-      fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }),
-      // ДОДАЄМО ТОКЕН СЮДИ ДЛЯ КАТЕГОРІЙ!
-      fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
+    const [tripData, catsData] = await Promise.all([
+      api.get(`/trips/${tripId}`),
+      api.get(`/trips/${tripId}/categories/`)
     ])
-
-    if (!tripRes.ok) {
-      if (tripRes.status === 401) throw new Error('Помилка авторизації. Увійдіть знову.')
-      if (tripRes.status === 403) throw new Error('У вас немає доступу до цієї поїздки.')
-      if (!catRes.ok) throw new Error('Не вдалося завантажити категорії')
-      throw new Error('Поїздку не знайдено')
-    }
-    
-    trip.value = await tripRes.json()
-    categories.value = await catRes.json()
-    
+    trip.value = tripData
+    categories.value = catsData
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -88,14 +70,8 @@ const isParticipant = computed(() => {
 const removeParticipant = async (participantId) => {
   if (!confirm('Видалити цього учасника з поїздки?')) return
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/participants/${participantId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-
-    if (!res.ok) throw new Error('Не вдалося видалити учасника')
+    await api.delete(`/trips/${tripId}/participants/${participantId}`)
     await fetchTripData()
   } catch (error) {
     toast.error(error.message)
@@ -104,16 +80,8 @@ const removeParticipant = async (participantId) => {
 
 // Приєднання до поїздки
 const joinTrip = async () => {
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/join`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.detail || 'Помилка приєднання')
-    }
+    await api.post(`/trips/${tripId}/join`)
     await fetchTripData()
   } catch (error) {
     toast.error(error.message)
@@ -124,18 +92,9 @@ const joinTrip = async () => {
 const leaveTrip = async () => {
   if (!confirm('Ти дійсно хочеш вийти з цієї поїздки? Всі твої спаковані речі стануть вільними.')) return
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/leave`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
+    await api.delete(`/trips/${tripId}/leave`)
 
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.detail || 'Не вдалося вийти з поїздки')
-    }
-    
     // Після успішного виходу кидаємо користувача на головну сторінку
     router.push('/')
   } catch (error) {
@@ -144,24 +103,11 @@ const leaveTrip = async () => {
 }
 
 
-const createCategory = async (categoryName) => { 
-  const token = localStorage.getItem('access_token')
+const createCategory = async (categoryName) => {
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: categoryName })
-    })
+    await api.post(`/trips/${tripId}/categories/`, { name: categoryName })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.detail || 'Не вдалося створити категорію')
-    }
-    
-    await fetchTripData() 
+    await fetchTripData()
     toast.success("Категорію успішно створено.")
   } catch (error) {
     toast.error(error.message)
@@ -176,21 +122,8 @@ const renameCategory = async ({ id, name }) => {
     return
   }
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/${id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: name.trim() })
-    })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Не вдалося перейменувати категорію')
-    }
+    await api.patch(`/trips/${tripId}/categories/${id}`, { name: name.trim() })
 
     await fetchTripData()
     toast.success('Категорію перейменовано.')
@@ -211,17 +144,8 @@ const deleteCategory = async (category) => {
 
   if (!confirm(message)) return
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}/categories/${category.id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Не вдалося видалити категорію')
-    }
+    await api.delete(`/trips/${tripId}/categories/${category.id}`)
 
     await fetchTripData()
     toast.success('Категорію видалено.')
@@ -230,23 +154,13 @@ const deleteCategory = async (category) => {
   }
 }
 
-const addItem = async (payload) => { 
-  const token = localStorage.getItem('access_token')
+const addItem = async (payload) => {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: payload.name,                  
-        trip_id: Number(tripId),
-        category_id: Number(payload.categoryId) 
-      })
+    await api.post('/items/', {
+      name: payload.name,
+      trip_id: Number(tripId),
+      category_id: Number(payload.categoryId)
     })
-
-    if (!res.ok) throw new Error('Не вдалося додати річ')
 
     await fetchTripData()
     toast.success("Річ додано до списку.")
@@ -257,26 +171,11 @@ const addItem = async (payload) => {
 
 // Бронювання речі через чекбокс
 const toggleItemAssignment = async (item) => {
-  const token = localStorage.getItem('access_token')
   const isAssigned = !!item.assigned_user
-  
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${item.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      // Відправляємо тільки статус галочки (true або false)
-      body: JSON.stringify({
-        is_packed: !isAssigned 
-      })
-    })
 
-    if (!res.ok) {
-      const errData = await res.json()
-      throw new Error(errData.detail || 'Не вдалося оновити статус речі')
-    }
+  try {
+    // Відправляємо тільки статус галочки (true або false)
+    await api.patch(`/items/${item.id}`, { is_packed: !isAssigned })
     await fetchTripData()
   } catch (error) {
     toast.error(error.message)
@@ -286,27 +185,13 @@ const toggleItemAssignment = async (item) => {
 
 // Перейменування речі (тільки організатор або автор речі)
 const renameItem = async ({ id, name }) => {
-  const token = localStorage.getItem('access_token')
-
   if (!name || name.trim().length < 2) {
     toast.error('Назва речі має містити щонайменше 2 символи')
     return
   }
 
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name: name.trim() })
-    })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Не вдалося перейменувати річ')
-    }
+    await api.patch(`/items/${id}`, { name: name.trim() })
 
     await fetchTripData()
     toast.success('Річ перейменовано.')
@@ -319,17 +204,8 @@ const renameItem = async ({ id, name }) => {
 const deleteItem = async (itemId) => {
   if (!confirm('Видалити цю річ зі списку?')) return
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/items/${itemId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || 'Не вдалося видалити річ')
-    }
+    await api.delete(`/items/${itemId}`)
     await fetchTripData()
     toast.success('Річ видалено.')
   } catch (error) {
@@ -341,15 +217,8 @@ const deleteItem = async (itemId) => {
 const deleteTrip = async () => {
   if (!confirm('УВАГА! Ти дійсно хочеш видалити цю поїздку назавжди?')) return
 
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/${tripId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-
-    if (!res.ok) throw new Error('Не вдалося видалити поїздку')
-    
+    await api.delete(`/trips/${tripId}`)
     router.push('/')
   } catch (error) {
     toast.error(error.message)

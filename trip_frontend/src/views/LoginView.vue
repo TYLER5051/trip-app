@@ -1,66 +1,60 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { toast } from 'vue3-toastify'
+import api from '../services/api'
 
 const router = useRouter()
 
 const username = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
 const isRegister = ref(false)
 
+// Валідація перед відправкою
+const validate = () => {
+  if (!username.value.trim()) {
+    errorMessage.value = 'Введіть логін'
+    return false
+  }
+
+  if (password.value.length < 8) {
+    errorMessage.value = 'Пароль має містити щонайменше 8 символів'
+    return false
+  }
+
+  if (isRegister.value && password.value !== confirmPassword.value) {
+    errorMessage.value = 'Паролі не співпадають'
+    return false
+  }
+
+  return true
+}
+
 const submitForm = async () => {
-  isLoading.value = true
   errorMessage.value = ''
+  if (!validate()) return
+
+  isLoading.value = true
 
   try {
     if (isRegister.value) {
       // реєстрація
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json', 
-        },
-        body: JSON.stringify({
-          username: username.value,
-          password: password.value
-        }),
-      })
+      await api.post('/register', { username: username.value.trim(), password: password.value })
 
-      if (!response.ok) {
-        if (response.status === 400) {
-          throw new Error('Користувач з таким логіном вже існує!')
-        }
-        throw new Error('Помилка при реєстрації')
-      }
-
-      alert('Реєстрація успішна! Тепер увійдіть зі своїми даними.')
-      isRegister.value = false 
-      password.value = ''      
+      toast.success('Реєстрація успішна! Тепер увійдіть зі своїми даними.')
+      isRegister.value = false
+      password.value = ''
+      confirmPassword.value = ''
 
     } else {
       // логін
-      const formData = new URLSearchParams()
-      formData.append('username', username.value)
-      formData.append('password', password.value)
+      const data = await api.login(username.value.trim(), password.value)
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error('Неправильний логін або пароль')
-      }
-
-      const data = await response.json()
-      
       localStorage.setItem('access_token', data.access_token)
-      localStorage.setItem('username', username.value)
+      localStorage.setItem('username', username.value.trim())
 
       router.push('/')
     }
@@ -94,7 +88,19 @@ const submitForm = async () => {
             type="password" 
             v-model="password" 
             required 
-            placeholder="Введи пароль"
+            minlength="8"
+            placeholder="Мінімум 8 символів"
+          />
+        </div>
+
+        <div v-if="isRegister" class="form-group">
+          <label>Підтверди пароль</label>
+          <input 
+            type="password" 
+            v-model="confirmPassword" 
+            required 
+            minlength="8"
+            placeholder="Повтори пароль"
           />
         </div>
 

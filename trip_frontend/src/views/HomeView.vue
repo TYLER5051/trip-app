@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import api from '../services/api'
 
 const trips = ref([])
 const isLoading = ref(true)
@@ -11,18 +12,10 @@ const isCreating = ref(false)
 const createError = ref('')
 
 const fetchTrips = async () => {
-  const token = localStorage.getItem('access_token')
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/trips/`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-    
-    if (!res.ok) throw new Error('Не вдалося завантажити поїздки')
-    trips.value = await res.json()
+    trips.value = await api.get('/trips/')
   } catch (error) {
-    console.error(error.message)
+    errorMessage.value = error.message
   } finally {
     isLoading.value = false 
   }
@@ -33,23 +26,9 @@ const createTrip = async () => {
 
   isCreating.value = true
   createError.value = ''
-  
-  const token = localStorage.getItem('access_token')
 
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/trips/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ title: newTripTitle.value })
-    })
-
-    if (!response.ok) {
-      throw new Error('Не вдалося створити поїздку. Можливо, токен закінчився.')
-    }
-
+    await api.post('/trips/', { title: newTripTitle.value.trim() })
     newTripTitle.value = ''
     await fetchTrips()
   } catch (error) {
