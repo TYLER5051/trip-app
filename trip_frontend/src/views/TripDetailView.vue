@@ -58,6 +58,11 @@ const groupedItems = computed(() => {
     groups[categoryName].push(item)
   })
 
+  // Важливі речі — першими в своїй категорії, далі за порядком створення
+  Object.values(groups).forEach(list => {
+    list.sort((a, b) => (b.is_critical === true) - (a.is_critical === true) || a.id - b.id)
+  })
+
   return groups
 })
 
@@ -156,30 +161,70 @@ const deleteCategory = async (category) => {
 
 const addItem = async (payload) => {
   try {
-    await api.post('/items/', {
+    const res = await api.post('/items/', {
       name: payload.name,
       trip_id: Number(tripId),
-      category_id: Number(payload.categoryId)
+      category_id: Number(payload.categoryId),
+      quantity: payload.quantity ?? 1,
+      note: payload.note || null,
+      is_critical: payload.is_critical ?? false
     })
 
     await fetchTripData()
     toast.success("Річ додано до списку.")
+
+    // Бекенд дозволяє дублікати, але сигналізує — радимо збільшити кількість
+    if (res.is_duplicate) {
+      toast.warning('У цій категорії вже є схожа річ. Можливо, краще збільшити кількість замість дубліката.')
+    }
   } catch (error) {
     toast.error(error.message)
   }
 }
 
-// Бронювання речі через чекбокс
+// Взяття речі через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
 const toggleItemAssignment = async (item) => {
-  const isAssigned = !!item.assigned_user
+  const assignedByMe = item.assigned_users && item.assigned_users.some(a => a.username === currentUser)
 
   try {
-    // Відправляємо тільки статус галочки (true або false)
-    await api.patch(`/items/${item.id}`, { is_packed: !isAssigned })
+    if (assignedByMe) {
+      await api.delete(`/items/${item.id}/assign`)
+    } else {
+      await api.post(`/items/${item.id}/assign`)
+    }
     await fetchTripData()
   } catch (error) {
     toast.error(error.message)
-    console.error(error)
+  }
+}
+
+// Зміна кількості після створення (тільки автор або організатор)
+const updateItemQuantity = async ({ id, quantity }) => {
+  const qty = Number(quantity)
+  if (!qty || qty < 1) {
+    toast.error('Кількість має бути не менше 1')
+    return
+  }
+
+  try {
+    await api.patch(`/items/${id}`, { quantity: qty })
+    await fetchTripData()
+    toast.success('Кількість оновлено.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
+// Зняти мітку «Важлива» (тільки автор або організатор) — після цього річ можна видалити
+const unmarkCritical = async (item) => {
+  if (!confirm(`Зняти мітку «Важлива» з речі "${item.name}"? Після цього її можна буде видалити.`)) return
+
+  try {
+    await api.patch(`/items/${item.id}`, { is_critical: false })
+    await fetchTripData()
+    toast.success('Мітку «Важлива» знято.')
+  } catch (error) {
+    toast.error(error.message)
   }
 }
 
@@ -272,6 +317,8 @@ onMounted(() => {
         @toggle="toggleItemAssignment"
         @delete="deleteItem"
         @rename="renameItem"
+        @update-quantity="updateItemQuantity"
+        @unmark-critical="unmarkCritical"
         @rename-category="renameCategory"
         @delete-category="deleteCategory"
       />

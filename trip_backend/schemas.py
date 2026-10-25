@@ -29,7 +29,9 @@ class CategoryUpdate(CategoryBase):
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=2, max_length=100)
-    is_packed: bool = False
+    quantity: int = Field(default=1, ge=1)
+    note: Optional[str] = Field(default=None, max_length=200)
+    is_critical: bool = False
 
 class ItemCreate(ItemBase):
     trip_id: int
@@ -37,15 +39,22 @@ class ItemCreate(ItemBase):
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    is_packed: Optional[bool] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    note: Optional[str] = Field(default=None, max_length=200)
+    is_critical: Optional[bool] = None
+    category_id: Optional[int] = Field(default=None, description="Нова категорія; null = не міняти")
 
 class ItemResponse(ItemBase):
     id: int
     category_id: Optional[int] = None
     category: Optional[CategoryResponse] = None
-    assigned_user: Optional[UserResponse] = None
+    assigned_users: List[UserResponse] = Field(default_factory=list)
     created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
+
+class ItemCreateResponse(BaseModel):
+    item: ItemResponse
+    is_duplicate: bool = False
 
 
 class TripBase(BaseModel):

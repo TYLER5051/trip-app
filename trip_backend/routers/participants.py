@@ -53,9 +53,8 @@ def remove_participant(
     trip_db.participants.remove(user_to_remove)
     
     for item in trip_db.items:
-        if item.assigned_user_id == user_to_remove.id:
-            item.assigned_user_id = None
-            item.is_packed = False
+        if user_to_remove in item.assigned_users:
+            item.assigned_users.remove(user_to_remove)
             
     db.commit()
     
@@ -81,9 +80,8 @@ def leave_trip(
     trip_db.participants.remove(current_user)
     
     for item in trip_db.items:
-        if item.assigned_user_id == current_user.id:
-            item.assigned_user_id = None
-            item.is_packed = False
+        if current_user in item.assigned_users:
+            item.assigned_users.remove(current_user)
             
     db.commit()
     

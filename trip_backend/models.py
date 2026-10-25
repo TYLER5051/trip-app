@@ -9,6 +9,13 @@ trip_users = Table(
     Column("trip_id", Integer, ForeignKey("trips.id"), primary_key=True)
 )
 
+item_assignments = Table(
+    "item_assignments",
+    Base.metadata,
+    Column("item_id", Integer, ForeignKey("items.id"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True)
+)
+
 class User(Base):
     __tablename__ = "users"
 
@@ -18,7 +25,7 @@ class User(Base):
 
     owned_trips = relationship("Trip", back_populates="owner")
     participating_trips = relationship("Trip", secondary=trip_users, back_populates="participants")
-    items_to_bring = relationship("Item", foreign_keys="Item.assigned_user_id", back_populates="assigned_user")
+    items_assigned = relationship("Item", secondary=item_assignments, back_populates="assigned_users")
 
 
 class Trip(Base):
@@ -51,15 +58,16 @@ class Item(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True) 
-    is_packed = Column(Boolean, default=False) 
+    quantity = Column(Integer, nullable=False, default=1)
+    note = Column(String, nullable=True)
+    is_critical = Column(Boolean, default=False)
 
     trip_id = Column(Integer, ForeignKey("trips.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))
     
-    assigned_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     trip = relationship("Trip", back_populates="items")
     category = relationship("Category", back_populates="items")
-    assigned_user = relationship("User", foreign_keys=[assigned_user_id], back_populates="items_to_bring")
+    assigned_users = relationship("User", secondary=item_assignments, back_populates="items_assigned")
     created_by = relationship("User", foreign_keys=[created_by_id])

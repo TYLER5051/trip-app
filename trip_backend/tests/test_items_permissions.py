@@ -3,8 +3,8 @@
 
 Правила бізнес-логіки:
   - перейменовувати/видаляти річ може ТІЛЬКИ її автор (created_by) або організатор поїздки;
-  - «взяти» (assigned_user) може будь-який учасник, але взяття НЕ дає права редагувати/видаляти;
-  - зняти галочку може той, хто взяв, або організатор.
+  - «взяти» (assign) може будь-який учасник, але взяття НЕ дає права редагувати/видаляти;
+  - важливу річ (is_critical) не може видалити НІХТО, доки автор або організатор не зніме мітку.
 """
 
 def setup_trip(client, auth_headers):
@@ -24,7 +24,7 @@ def setup_trip(client, auth_headers):
 def create_item(client, headers, trip_id, category_id, name):
     r = client.post("/items/", json={"name": name, "trip_id": trip_id, "category_id": category_id}, headers=headers)
     assert r.status_code == 200, r.text
-    return r.json()
+    return r.json()["item"]
 
 
 def rename(client, headers, item_id, name):
@@ -35,8 +35,12 @@ def delete(client, headers, item_id):
     return client.delete(f"/items/{item_id}", headers=headers)
 
 
-def toggle(client, headers, item_id, value):
-    return client.patch(f"/items/{item_id}", json={"is_packed": value}, headers=headers)
+def assign(client, headers, item_id):
+    return client.post(f"/items/{item_id}/assign", headers=headers)
+
+
+def unassign(client, headers, item_id):
+    return client.delete(f"/items/{item_id}/assign", headers=headers)
 
 
 def test_response_contains_creator(client, auth_headers):
@@ -89,7 +93,7 @@ def test_taker_cannot_rename_or_delete_taken_item(client, auth_headers):
     item = create_item(client, org, trip_id, cat_id, "Намет")
 
     # u1 бере річ — галочку може ставити будь-який учасник
-    assert toggle(client, u1, item["id"], True).status_code == 200
+    assert assign(client, u1, item["id"]).status_code == 200
 
     # але «взяте» не означає «своє»: перейменувати/видалити заборонено
     assert rename(client, u1, item["id"], "Хак").status_code == 403
@@ -116,13 +120,13 @@ def test_take_and_unpack_flow(client, auth_headers):
     item = create_item(client, org, trip_id, cat_id, "Намет")
 
     # вільну річ може взяти будь-який учасник
-    assert toggle(client, u1, item["id"], True).status_code == 200
+    assert assign(client, u1, item["id"]).status_code == 200
 
-    # вже взяту річ інший учасник «хапнути» не може
-    assert toggle(client, u2, item["id"], True).status_code == 403
+    # кількість вичерпана (quantity=1) — інший учасник взяти не може
+    assert assign(client, u2, item["id"]).status_code == 400
 
-    # той, хто взяв, може зняти галочку
-    assert toggle(client, u1, item["id"], False).status_code == 200
+    # той, хто взяв, знімає СВОЄ «взяття»
+    assert unassign(client, u1, item["id"]).status_code == 200
 
 
 def test_outsider_cannot_rename(client, auth_headers):

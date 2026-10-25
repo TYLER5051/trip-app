@@ -23,7 +23,7 @@ from database import engine
 
 # Таблиці, які будемо чистити перед кожним тестом.
 # Порядок важливий: спочатку залежні таблиці, потім батьківські.
-TABLES = ["items", "categories", "trip_users", "trips", "users"]
+TABLES = ["item_assignments", "items", "categories", "trip_users", "trips", "users"]
 
 
 def _cleanup():

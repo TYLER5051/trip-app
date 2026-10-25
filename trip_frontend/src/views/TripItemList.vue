@@ -8,7 +8,7 @@ const props = defineProps({
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete', 'rename', 'rename-category', 'delete-category'])
+const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category'])
 
 // Стан редагування назви речі
 const editingId = ref(null)
@@ -26,6 +26,12 @@ const canModifyItem = (item) => {
   const isCreator = item.created_by && item.created_by.username === props.currentUser
   return isOwner || isCreator
 }
+
+// Чи «взяв» річ поточний користувач (його чекбокс)
+const assignedByMe = (item) => item.assigned_users && item.assigned_users.some(a => a.username === props.currentUser)
+
+// Всі місця (quantity) уже розібрані
+const itemFull = (item) => !!(item.assigned_users && item.assigned_users.length >= item.quantity)
 
 // Знайти об'єкт категорії за назвою групи (назви унікальні в межах поїздки)
 const catFor = (name) => props.categories.find(c => c.name === name)
@@ -150,20 +156,35 @@ const saveCategoryRename = (cat) => {
               <label class="item-label">
                 <input
                   type="checkbox"
-                  :checked="!!item.assigned_user"
+                  :checked="assignedByMe(item)"
                   @change="emit('toggle', item)"
-                  :disabled="!!item.assigned_user && item.assigned_user.username !== currentUser && ownerUsername !== currentUser"
+                  :disabled="!assignedByMe(item) && itemFull(item)"
+                  :title="!assignedByMe(item) && itemFull(item) ? 'Всі місця розібрані' : ''"
                 />
-                <span class="item-name" :class="{ assigned: !!item.assigned_user }">
-                  {{ item.name }}
+                <span class="item-info">
+                  <span class="item-name" :class="{ assigned: assignedByMe(item) }">
+                    {{ item.name }}
+                    <span v-if="item.quantity && item.quantity > 1" class="qty-badge" title="Кількість">×{{ item.quantity }}</span>
+                  </span>
+                  <span v-if="item.note" class="item-note">{{ item.note }}</span>
                 </span>
+                <button
+                  v-if="item.is_critical && canModifyItem(item)"
+                  class="critical-badge clickable"
+                  title="Зняти мітку «Важлива» (після цього можна видалити)"
+                  @click="emit('unmark-critical', item)"
+                >⭐</button>
+                <span v-else-if="item.is_critical" class="critical-badge" title="Важлива річ">⭐</span>
               </label>
 
               <span v-if="item.created_by" class="creator-badge">
                 Автор: {{ item.created_by.username }}
               </span>
-              <span v-if="item.assigned_user" class="assignee-badge">
-                Взяв(ла): {{ item.assigned_user.username }}
+              <span v-if="item.assigned_users && item.assigned_users.length" class="assignee-badge">
+                Бере: {{ item.assigned_users.map(a => a.username).join(', ') }}
+              </span>
+              <span v-if="item.quantity > 1" class="taken-count" :class="{ full: itemFull(item) }">
+                {{ item.assigned_users ? item.assigned_users.length : 0 }}/{{ item.quantity }}
               </span>
             </div>
 
@@ -196,14 +217,23 @@ const saveCategoryRename = (cat) => {
                 title="Перейменувати"
                 @click="startRename(item)"
               >✏️</button>
+              <input
+                type="number"
+                min="1"
+                class="qty-edit"
+                :value="item.quantity"
+                title="Змінити кількість (шт)"
+                @change="emit('update-quantity', { id: item.id, quantity: $event.target.value })"
+              />
             </div>
 
-            <!-- Кнопка видалення: для організатора або автора речі -->
+            <!-- Кнопка видалення: для організатора або автора речі (важливу — спершу зняти мітку) -->
             <button
               v-if="canModifyItem(item)"
               @click="emit('delete', item.id)"
               class="delete-item-btn"
-              title="Видалити річ"
+              :title="item.is_critical ? 'Важливу річ не можна видалити. Спочатку зніміть мітку «Важлива».' : 'Видалити річ'"
+              :disabled="item.is_critical"
             >
               ❌
             </button>
@@ -301,6 +331,59 @@ const saveCategoryRename = (cat) => {
 .item-name.assigned {
   text-decoration: line-through;
   color: #95a5a6;
+}
+.item-info {
+  display: flex;
+  flex-direction: column;
+}
+.qty-badge {
+  background-color: #e8f5e9;
+  color: #27ae60;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-left: 6px;
+}
+.critical-badge {
+  font-size: 14px;
+  margin-left: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.critical-badge.clickable {
+  cursor: pointer;
+  opacity: 0.85;
+}
+.critical-badge.clickable:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.item-note {
+  font-size: 12px;
+  color: #95a5a6;
+  margin-top: 2px;
+}
+.qty-edit {
+  width: 52px;
+  padding: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.qty-edit:focus {
+  outline: none;
+  border-color: #42b883;
+}
+.taken-count {
+  font-size: 12px;
+  color: #2980b9;
+  font-weight: bold;
+  margin-left: 6px;
+}
+.taken-count.full {
+  color: #27ae60;
 }
 .assignee-badge {
   background-color: #e8f4f8;

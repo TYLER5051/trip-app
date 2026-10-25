@@ -11,6 +11,9 @@ const emit = defineEmits(['add-item', 'create-category'])
 const newItemName = ref('')
 const selectedCategoryId = ref('')
 const newCategoryName = ref('')
+const newItemQuantity = ref(1)
+const newItemNote = ref('')
+const newItemCritical = ref(false)
 const showCategoryForm = ref(false)
 const itemNameInput = ref(null)
 // Назва щойно створеної категорії, яку треба автоматично обрати у випадаючому списку
@@ -46,10 +49,16 @@ const submitItem = () => {
   
   emit('add-item', {
     name: newItemName.value,
-    categoryId: selectedCategoryId.value
+    categoryId: selectedCategoryId.value,
+    quantity: newItemQuantity.value || 1,
+    note: newItemNote.value.trim(),
+    is_critical: newItemCritical.value
   })
   
-  newItemName.value = '' 
+  newItemName.value = ''
+  newItemQuantity.value = 1
+  newItemNote.value = ''
+  newItemCritical.value = false
 }
 
 const submitCategory = () => {
@@ -83,7 +92,28 @@ const submitCategory = () => {
           {{ cat.name }}
         </option>
       </select>
-      <button type="submit">Додати</button>
+
+      <div class="item-form-extra">
+        <input
+          type="number"
+          v-model.number="newItemQuantity"
+          min="1"
+          class="qty-input"
+          title="Кількість"
+          placeholder="1"
+        />
+        <input
+          type="text"
+          v-model="newItemNote"
+          class="note-input"
+          placeholder="Примітка (необов'язково)"
+        />
+        <label class="critical-label" title="Позначити як важливу">
+          <input type="checkbox" v-model="newItemCritical" />
+          Важлива
+        </label>
+        <button type="submit">Додати</button>
+      </div>
     </form>
 
     <div class="category-toggle">
@@ -109,7 +139,28 @@ const submitCategory = () => {
 }
 .item-form {
   display: flex;
+  flex-direction: column;
   gap: 10px;
+}
+.item-form-extra {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.item-form-extra .qty-input {
+  width: 70px;
+  flex: none;
+}
+.note-input {
+  flex: 1;
+}
+.critical-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  white-space: nowrap;
+  color: #34495e;
 }
 .item-form input, .item-form select {
   padding: 8px;
