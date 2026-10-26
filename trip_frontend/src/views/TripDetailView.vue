@@ -71,6 +71,12 @@ const isParticipant = computed(() => {
   return trip.value.participants.some(p => p.username === currentUser)
 })
 
+const packingPercent = computed(() => {
+  const total = trip.value?.total_items || 0
+  if (!total) return 0
+  return Math.round(((trip.value?.packed_items || 0) / total) * 100)
+})
+
 // Видалення учасника (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
 const removeParticipant = async (participantId) => {
   if (!confirm('Видалити цього учасника з поїздки?')) return
@@ -305,6 +311,15 @@ onMounted(() => {
         @delete="deleteTrip"
         @rename="renameTrip"
       />
+
+      <div class="packing-progress-card">
+        <div class="progress-label">
+          Зібрано {{ trip.packed_items ?? 0 }} із {{ trip.total_items ?? 0 }} речей ({{ packingPercent }}%)
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" :style="{ width: packingPercent + '%' }"></div>
+        </div>
+      </div>
       
       <!-- учасники -->
       <TripParticipants 
@@ -349,5 +364,30 @@ onMounted(() => {
   text-align: center;
   color: #666;
   margin-top: 20px;
+}
+.packing-progress-card {
+  background: white;
+  padding: 15px 20px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+}
+.progress-label {
+  font-size: 14px;
+  color: #2980b9;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+.progress-track {
+  background: #e1e8ed;
+  border-radius: 8px;
+  height: 10px;
+  overflow: hidden;
+}
+.progress-fill {
+  background: #27ae60;
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
 }
 </style>

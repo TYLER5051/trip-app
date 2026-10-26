@@ -21,6 +21,12 @@ const fetchTrips = async () => {
   }
 }
 
+const packingPercent = (trip) => {
+  const total = trip.total_items || 0
+  if (!total) return 0
+  return Math.round(((trip.packed_items || 0) / total) * 100)
+}
+
 const createTrip = async () => {
   if (!newTripTitle.value.trim()) return
 
@@ -90,8 +96,13 @@ onMounted(() => {
           <p class="participants">
             Учасників: {{ trip.participants ? trip.participants.length : 0 }}
           </p>
-          <div class="items-preview">
-            Речей у списку: {{ trip.items ? trip.items.length : 0 }}
+          <div class="packing-progress">
+            <div class="progress-label">
+              Зібрано {{ trip.packed_items ?? 0 }} із {{ trip.total_items ?? 0 }} речей ({{ packingPercent(trip) }}%)
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" :style="{ width: packingPercent(trip) + '%' }"></div>
+            </div>
           </div>
         </div>
       </router-link>
@@ -200,10 +211,25 @@ h1 {
   font-size: 14px;
   margin: 5px 0;
 }
-.items-preview {
+.packing-progress {
   margin-top: 15px;
-  font-size: 14px;
+}
+.progress-label {
+  font-size: 13px;
   color: #2980b9;
   font-weight: bold;
+  margin-bottom: 6px;
+}
+.progress-track {
+  background: #e1e8ed;
+  border-radius: 8px;
+  height: 8px;
+  overflow: hidden;
+}
+.progress-fill {
+  background: #27ae60;
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
 }
 </style>

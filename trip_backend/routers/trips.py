@@ -7,6 +7,11 @@ import models, schemas
 
 router = APIRouter(prefix="/trips")
 
+def _with_stats(trip):
+    trip.total_items = len(trip.items)
+    trip.packed_items = sum(1 for item in trip.items if item.assigned_users)
+    return trip
+
 @router.post("/", response_model=schemas.TripResponse)
 def create_trip(
     trip: schemas.TripCreate,
@@ -23,15 +28,15 @@ def create_trip(
 @router.get("/", response_model=list[schemas.TripResponse])
 def get_trips(current_user: models.User = Depends(get_current_user)):
     trips = current_user.owned_trips + current_user.participating_trips
-    return list(dict.fromkeys(trips))
+    return [_with_stats(t) for t in dict.fromkeys(trips)]
 
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     trip = db.get(models.Trip, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-    
-    return trip
+
+    return _with_stats(trip)
 
 @router.post("/{trip_id}/categories/", response_model=schemas.CategoryResponse)
 def create_category_for_trip(
@@ -80,7 +85,7 @@ def update_trip(
 
     db.commit()
     db.refresh(trip)
-    return trip
+    return _with_stats(trip)
 
 @router.get("/{trip_id}/categories/", response_model=List[schemas.CategoryResponse])
 def get_categories_for_trip(
