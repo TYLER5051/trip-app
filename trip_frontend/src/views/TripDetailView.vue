@@ -79,11 +79,18 @@ const packingPercent = computed(() => {
 
 // Видалення учасника (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
 const removeParticipant = async (participantId) => {
-  if (!confirm('Видалити цього учасника з поїздки?')) return
+  const participant = trip.value?.participants?.find(p => p.id === participantId)
+  const freedCount = (trip.value?.items || []).filter(item =>
+    item.assigned_users && item.assigned_users.some(u => u.id === participantId)
+  ).length
+
+  const who = participant ? `«${participant.username}»` : `ID ${participantId}`
+  if (!confirm(`Видалити учасника ${who}? Його взяті речі (${freedCount}) стануть вільними.`)) return
 
   try {
     await api.delete(`/trips/${tripId}/participants/${participantId}`)
     await fetchTripData()
+    toast.success(freedCount > 0 ? `Речі учасника звільнено: ${freedCount} шт.` : 'Учасника видалено.')
   } catch (error) {
     toast.error(error.message)
   }

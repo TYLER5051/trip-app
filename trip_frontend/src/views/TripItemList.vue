@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, computed } from 'vue'
 
 const props = defineProps({
   groupedItems: { type: Object, required: true },
@@ -32,6 +32,44 @@ const assignedByMe = (item) => item.assigned_users && item.assigned_users.some(a
 
 // Всі місця (quantity) уже розібрані
 const itemFull = (item) => !!(item.assigned_users && item.assigned_users.length >= item.quantity)
+
+// Фільтри списку речей
+const showOnlyFree = ref(false)
+const showMyItems = ref(false)
+const sortByStatus = ref('free-first')
+
+// Відфільтровані/відсортовані речі (в межах кожної категорії)
+const filteredGroups = computed(() => {
+  const result = {}
+
+  Object.entries(props.groupedItems).forEach(([categoryName, items]) => {
+    let list = items
+
+    if (showOnlyFree.value) {
+      list = list.filter(item => !item.assigned_users || item.assigned_users.length === 0)
+    }
+
+    if (showMyItems.value) {
+      list = list.filter(item =>
+        (item.created_by && item.created_by.username === props.currentUser) ||
+        assignedByMe(item)
+      )
+    }
+
+    if (sortByStatus.value !== 'none') {
+      const freeFirst = sortByStatus.value === 'free-first'
+      list = [...list].sort((a, b) => {
+        const aFree = !a.assigned_users || a.assigned_users.length === 0 ? 1 : 0
+        const bFree = !b.assigned_users || b.assigned_users.length === 0 ? 1 : 0
+        return freeFirst ? bFree - aFree : aFree - bFree
+      })
+    }
+
+    if (list.length) result[categoryName] = list
+  })
+
+  return result
+})
 
 // Знайти об'єкт категорії за назвою групи (назви унікальні в межах поїздки)
 const catFor = (name) => props.categories.find(c => c.name === name)
@@ -107,7 +145,29 @@ const saveCategoryRename = (cat) => {
     </div>
 
     <div v-else>
-      <div v-for="(items, categoryName) in groupedItems" :key="categoryName" class="category-group">
+      <div class="item-filters">
+        <label class="filter-check">
+          <input type="checkbox" v-model="showOnlyFree" />
+          Показати тільки невзяті
+        </label>
+        <label class="filter-check">
+          <input type="checkbox" v-model="showMyItems" />
+          Мої речі
+        </label>
+        <label class="filter-sort">
+          <select v-model="sortByStatus" class="filter-select">
+            <option value="free-first">Невзяті зверху</option>
+            <option value="packed-first">Взяті зверху</option>
+            <option value="none">Сортування: за замовчуванням</option>
+          </select>
+        </label>
+      </div>
+
+      <div v-if="Object.keys(filteredGroups).length === 0" class="empty">
+        За вибраними фільтрами речей не знайдено.
+      </div>
+
+      <div v-for="(items, categoryName) in filteredGroups" :key="categoryName" class="category-group">
         <div class="category-header">
           <h4 class="category-title"> {{ categoryName }}</h4>
           <div v-if="catFor(categoryName)" class="category-actions">
@@ -251,6 +311,39 @@ const saveCategoryRename = (cat) => {
   padding: 20px;
   border-radius: 10px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.item-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 15px;
+  background: #f8f9fa;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #34495e;
+  cursor: pointer;
+}
+.filter-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #42b883;
+}
+.filter-select {
+  padding: 5px 8px;
+  border: 1px solid #d5dbe1;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #34495e;
+  background: white;
+  cursor: pointer;
 }
 .category-group {
   margin-bottom: 20px;
