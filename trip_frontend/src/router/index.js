@@ -27,7 +27,7 @@ router.beforeEach((to, from, next) => {
   const isAuthenticated = !!localStorage.getItem('access_token')
 
   if (!isAuthenticated && to.name !== 'Login') {
-    next({ name: 'Login' }) 
+    next({ name: 'Login', query: { redirect: to.fullPath } })
   } 
 
   else if (isAuthenticated && to.name === 'Login') {

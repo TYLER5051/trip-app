@@ -30,6 +30,20 @@ def get_trips(current_user: models.User = Depends(get_current_user)):
     trips = current_user.owned_trips + current_user.participating_trips
     return [_with_stats(t) for t in dict.fromkeys(trips)]
 
+@router.get("/{trip_id}/preview")
+def preview_trip(trip_id: int, db: Session = Depends(get_db)):
+    trip = db.get(models.Trip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    return {
+        "id": trip.id,
+        "title": trip.title,
+        "owner": {"username": trip.owner.username} if trip.owner else None,
+        "participants_count": len(trip.participants),
+        "items_count": len(trip.items)
+    }
+
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     trip = db.get(models.Trip, trip_id)

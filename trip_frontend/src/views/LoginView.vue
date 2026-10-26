@@ -1,10 +1,28 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import api from '../services/api'
 
+const route = useRoute()
 const router = useRouter()
+
+const redirectTo = route.query.redirect ? String(route.query.redirect) : '/'
+
+const previewTrip = ref(null)
+
+const loadTripPreview = async () => {
+  const match = redirectTo.match(/^\/trips\/(\d+)/)
+  if (!match) return
+
+  try {
+    previewTrip.value = await api.get(`/trips/${match[1]}/preview`)
+  } catch (error) {
+    previewTrip.value = null
+  }
+}
+
+onMounted(loadTripPreview)
 
 const username = ref('')
 const password = ref('')
@@ -56,7 +74,7 @@ const submitForm = async () => {
       localStorage.setItem('access_token', data.access_token)
       localStorage.setItem('username', username.value.trim())
 
-      router.push('/')
+      router.push(redirectTo)
     }
   } catch (error) {
     errorMessage.value = error.message
@@ -68,6 +86,14 @@ const submitForm = async () => {
 
 <template>
   <div class="login-container">
+    <div v-if="previewTrip" class="trip-preview-card">
+      <div class="preview-icon">🌍</div>
+      <h3>Це поїздка «{{ previewTrip.title }}»</h3>
+      <p v-if="previewTrip.owner">Організатор: <strong>{{ previewTrip.owner.username }}</strong></p>
+      <p>Учасників: {{ previewTrip.participants_count }} · Речей: {{ previewTrip.items_count }}</p>
+      <p class="preview-hint">Увійди або зареєструйся, щоб приєднатися!</p>
+    </div>
+
     <div class="login-card">
       <h2>{{ isRegister ? 'Реєстрація' : 'Вхід у систему' }}</h2>
       
@@ -142,6 +168,33 @@ const submitForm = async () => {
   box-shadow: 0 4px 10px rgba(0,0,0,0.1);
   width: 100%;
   max-width: 400px;
+}
+.trip-preview-card {
+  background: white;
+  padding: 25px 30px;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 20px;
+  text-align: center;
+  border-top: 4px solid #42b883;
+}
+.trip-preview-card h3 {
+  color: #2c3e50;
+  margin: 10px 0;
+}
+.trip-preview-card p {
+  color: #7f8c8d;
+  margin: 6px 0;
+}
+.preview-icon {
+  font-size: 40px;
+}
+.preview-hint {
+  color: #2980b9 !important;
+  font-weight: bold;
+  margin-top: 10px !important;
 }
 h2 {
   text-align: center;
