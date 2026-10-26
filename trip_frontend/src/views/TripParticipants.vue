@@ -1,6 +1,6 @@
 <script setup>
 
-const props = defineProps({
+defineProps({
   participants: { type: Array, required: true },
   ownerUsername: { type: String, required: false },
   currentUser: { type: String, required: true }

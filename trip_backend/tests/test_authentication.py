@@ -28,5 +28,5 @@ def test_login_wrong_password(client, auth_headers):
 def test_login_unknown_user(client):
     # Юзера не реєструємо — він «не існує»
     r = client.post("/login", data={"username": "nobody", "password": "password123"})
-    assert r.status_code == 404
-    assert "реєстр" in r.json()["detail"].lower()
+    assert r.status_code == 401
+    assert "логін" in r.json()["detail"].lower()

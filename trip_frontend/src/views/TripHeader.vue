@@ -1,7 +1,7 @@
 <script setup>
 import { toast } from 'vue3-toastify'
 
-const props = defineProps({
+defineProps({
   trip: { type: Object, required: true },
   currentUser: { type: String, required: true },
   isParticipant: { type: Boolean, required: true }
