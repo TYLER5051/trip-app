@@ -161,7 +161,7 @@ const deleteCategory = async (category) => {
 
 const addItem = async (payload) => {
   try {
-    const res = await api.post('/items/', {
+    await api.post('/items/', {
       name: payload.name,
       trip_id: Number(tripId),
       category_id: Number(payload.categoryId),
@@ -172,11 +172,6 @@ const addItem = async (payload) => {
 
     await fetchTripData()
     toast.success("Річ додано до списку.")
-
-    // Бекенд дозволяє дублікати, але сигналізує — радимо збільшити кількість
-    if (res.is_duplicate) {
-      toast.warning('У цій категорії вже є схожа річ. Можливо, краще збільшити кількість замість дубліката.')
-    }
   } catch (error) {
     toast.error(error.message)
   }
@@ -270,6 +265,23 @@ const deleteTrip = async () => {
   }
 }
 
+// Перейменування поїздки (тільки організатор)
+const renameTrip = async (newTitle) => {
+  if (!newTitle || newTitle.trim().length < 3) {
+    toast.error('Назва поїздки має містити щонайменше 3 символи')
+    return
+  }
+
+  try {
+    await api.patch(`/trips/${tripId}`, { title: newTitle.trim() })
+
+    await fetchTripData()
+    toast.success('Поїздку перейменовано.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
 onMounted(() => {
   fetchTripData()
 })
@@ -291,6 +303,7 @@ onMounted(() => {
         @join="joinTrip"
         @leave="leaveTrip"
         @delete="deleteTrip"
+        @rename="renameTrip"
       />
       
       <!-- учасники -->

@@ -54,7 +54,6 @@ class ItemResponse(ItemBase):
 
 class ItemCreateResponse(BaseModel):
     item: ItemResponse
-    is_duplicate: bool = False
 
 
 class TripBase(BaseModel):
@@ -62,6 +61,9 @@ class TripBase(BaseModel):
 
 class TripCreate(TripBase):
     pass
+
+class TripUpdate(TripBase):
+    title: Optional[str] = None
 
 class TripResponse(TripBase):
     id: int

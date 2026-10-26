@@ -7,7 +7,7 @@ import models, schemas
 
 router = APIRouter(prefix="/items")
 
-@router.post("/", response_model=schemas.ItemCreateResponse)
+@router.post("/", response_model=schemas.ItemResponse)
 def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     trip = db.get(models.Trip, item.trip_id)
     if trip is None:
@@ -27,6 +27,13 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current
             detail="Ця категорія належить іншій поїздці"
         )
 
+    existing_item = db.query(models.Item).filter(
+        models.Item.trip_id == item.trip_id,
+        models.Item.name == item.name
+    ).first()
+    if existing_item:
+        raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
+
     db_item = models.Item(
         name=item.name,
         quantity=item.quantity,
@@ -39,16 +46,7 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
-
-    # Дублікат = та сама назва (без регістру та пробілів) у тій же категорії.
-    # Створення дозволяємо, але сигналізуємо, щоб фронт підказав збільшити quantity.
-    duplicate = db.query(models.Item).filter(
-        models.Item.category_id == category.id,
-        models.Item.id != db_item.id,
-        func.lower(func.trim(models.Item.name)) == item.name.strip().lower()
-    ).first()
-
-    return schemas.ItemCreateResponse(item=db_item, is_duplicate=duplicate is not None)
+    return db_item
 
 @router.patch("/{item_id}", response_model=schemas.ItemResponse)
 def update_item(
@@ -82,6 +80,16 @@ def update_item(
                 status_code=403,
                 detail="Ви можете змінювати лише власні речі (створені вами)"
             )
+
+        if item_update.name is not None or item_update.category_id is not None:
+            effective_name = item_update.name if item_update.name is not None else item.name
+            duplicate = db.query(models.Item).filter(
+                models.Item.name == effective_name,
+                models.Item.trip_id == item.trip_id,
+                models.Item.id != item_id
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
 
         if item_update.name is not None:
             item.name = item_update.name

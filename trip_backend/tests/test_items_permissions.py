@@ -24,7 +24,7 @@ def setup_trip(client, auth_headers):
 def create_item(client, headers, trip_id, category_id, name):
     r = client.post("/items/", json={"name": name, "trip_id": trip_id, "category_id": category_id}, headers=headers)
     assert r.status_code == 200, r.text
-    return r.json()["item"]
+    return r.json()
 
 
 def rename(client, headers, item_id, name):

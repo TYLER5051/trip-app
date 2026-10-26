@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import { toast } from 'vue3-toastify'
 
 defineProps({
@@ -7,7 +8,16 @@ defineProps({
   isParticipant: { type: Boolean, required: true }
 })
 
-const emit = defineEmits(['join', 'leave', 'delete'])
+const emit = defineEmits(['join', 'leave', 'delete', 'rename'])
+
+const isEditingTitle = ref(false)
+const newTitle = ref('')
+
+const submitRename = () => {
+  if (!newTitle.value.trim()) return
+  emit('rename', newTitle.value.trim())
+  isEditingTitle.value = false
+}
 
 const copyTripLink = async () => {
   try {
@@ -75,6 +85,21 @@ const copyTripLink = async () => {
       <button @click="copyTripLink" class="copy-link-btn">
         Скопіювати посилання на поїздку
       </button>
+
+      <!-- Перейменування поїздки (тільки організатор) -->
+      <button 
+        v-if="trip.owner?.username === currentUser" 
+        @click="isEditingTitle = true; newTitle = trip.title" 
+        class="rename-trip-btn"
+      >
+        Перейменувати
+      </button>
+
+      <div v-if="isEditingTitle" class="rename-form">
+        <input v-model="newTitle" class="rename-input" placeholder="Нова назва поїздки" />
+        <button @click="submitRename" class="rename-save-btn" :disabled="!newTitle.trim()">Зберегти</button>
+        <button @click="isEditingTitle = false" class="rename-cancel-btn">Скасувати</button>
+      </div>
     </div>
   </div>
 </template>
@@ -157,5 +182,54 @@ const copyTripLink = async () => {
 }
 .copy-link-btn:hover {
   background-color: #45a049;
+}
+.rename-trip-btn { 
+  background-color: #8e44ad; 
+  color: white; 
+  border: none; 
+  padding: 8px 15px; 
+  border-radius: 5px; 
+  cursor: pointer; 
+  font-weight: bold; 
+}
+.rename-trip-btn:hover { 
+  background-color: #732d91; 
+}
+.rename-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rename-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+.rename-save-btn {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.rename-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.rename-cancel-btn {
+  background-color: #95a5a6;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.rename-cancel-btn:hover {
+  background-color: #7f8c8d;
 }
 </style>

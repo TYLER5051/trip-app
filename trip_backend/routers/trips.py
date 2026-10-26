@@ -61,6 +61,27 @@ def create_category_for_trip(
     db.refresh(new_cat)
     return new_cat
 
+@router.patch("/{trip_id}", response_model=schemas.TripResponse)
+def update_trip(
+    trip_id: int,
+    trip_update: schemas.TripUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    trip = db.get(models.Trip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    if trip.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Тільки організатор може змінювати назву")
+
+    if trip_update.title is not None:
+        trip.title = trip_update.title
+
+    db.commit()
+    db.refresh(trip)
+    return trip
+
 @router.get("/{trip_id}/categories/", response_model=List[schemas.CategoryResponse])
 def get_categories_for_trip(
     trip_id: int,
