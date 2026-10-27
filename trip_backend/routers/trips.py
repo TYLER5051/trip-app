@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, case
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user
@@ -7,6 +8,15 @@ from typing import List
 import models, schemas
 
 router = APIRouter(prefix="/trips")
+
+_TRIP_LOAD_OPTIONS = (
+    selectinload(models.Trip.items).selectinload(models.Item.assigned_users),
+    selectinload(models.Trip.items).selectinload(models.Item.created_by),
+    selectinload(models.Trip.items).selectinload(models.Item.category)
+        .selectinload(models.Category.created_by),
+    selectinload(models.Trip.owner),
+    selectinload(models.Trip.participants),
+)
 
 def _with_stats(trip):
     trip.total_items = len(trip.items)
@@ -26,10 +36,50 @@ def create_trip(
     db.refresh(db_trip)
     return db_trip
 
-@router.get("/", response_model=list[schemas.TripResponse])
-def get_trips(current_user: models.User = Depends(get_current_user)):
-    trips = current_user.owned_trips + current_user.participating_trips
-    return [_with_stats(t) for t in dict.fromkeys(trips)]
+@router.get("/", response_model=list[schemas.TripSummaryResponse])
+def get_trips(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    trips = (
+        db.query(models.Trip)
+        .filter(
+            or_(
+                models.Trip.owner_id == current_user.id,
+                models.Trip.participants.any(models.User.id == current_user.id),
+            )
+        )
+        .options(
+            selectinload(models.Trip.owner),
+            selectinload(models.Trip.participants),
+        )
+        .order_by(
+            case((models.Trip.owner_id == current_user.id, 0), else_=1), 
+            models.Trip.id
+        )
+        .all()
+    )
+    
+    if not trips:
+        return []
+
+    trip_ids = [t.id for t in trips]
+    stats_rows = (
+        db.query(
+            models.Item.trip_id,
+            func.count(func.distinct(models.Item.id)).label("total_items"),
+            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
+        )
+        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(models.Item.trip_id.in_(trip_ids))
+        .group_by(models.Item.trip_id)
+        .all()
+    )
+    stats = {row.trip_id: row for row in stats_rows}
+
+    for trip in trips:
+        row = stats.get(trip.id)
+        trip.total_items = row.total_items if row else 0
+        trip.packed_items = row.packed_items if row else 0
+
+    return trips
 
 @router.get("/{trip_id}/preview")
 def preview_trip(trip_id: int, db: Session = Depends(get_db)):
@@ -47,7 +97,12 @@ def preview_trip(trip_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    trip = db.get(models.Trip, trip_id)
+    trip = (
+        db.query(models.Trip)
+        .options(*_TRIP_LOAD_OPTIONS)
+        .filter(models.Trip.id == trip_id)
+        .first()
+    )
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
