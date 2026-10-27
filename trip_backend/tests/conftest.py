@@ -21,6 +21,8 @@ from sqlalchemy import text
 import main  # noqa: F401  (тут же спрацьовує models.Base.metadata.create_all)
 from database import engine
 
+main.app.state.limiter.enabled = False
+
 # Таблиці, які будемо чистити перед кожним тестом.
 # Порядок важливий: спочатку залежні таблиці, потім батьківські.
 TABLES = ["item_assignments", "items", "categories", "trip_users", "trips", "users"]
