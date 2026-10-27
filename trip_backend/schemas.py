@@ -52,10 +52,6 @@ class ItemResponse(ItemBase):
     created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
-class ItemCreateResponse(BaseModel):
-    item: ItemResponse
-
-
 class TripBase(BaseModel):
     title: str = Field(min_length=3, max_length=100)
 

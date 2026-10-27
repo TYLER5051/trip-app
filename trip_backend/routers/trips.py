@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user
 from typing import List
@@ -76,7 +77,11 @@ def create_category_for_trip(
         
     new_cat = models.Category(name=category.name, trip_id=trip_id, created_by_id=current_user.id)
     db.add(new_cat)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Така категорія вже існує в цій поїздці")
     db.refresh(new_cat)
     return new_cat
 
@@ -147,7 +152,11 @@ def update_categories_for_trip(
         raise HTTPException(status_code=400, detail="Така категорія вже існує в цій поїздці")
 
     category.name = category_update.name
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Така категорія вже існує в цій поїздці")
     db.refresh(category)
     return category
 

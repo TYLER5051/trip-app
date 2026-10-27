@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user
 import models, schemas
@@ -44,7 +44,11 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current
         created_by_id=current_user.id
     )
     db.add(db_item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
     db.refresh(db_item)
     return db_item
 
@@ -67,8 +71,6 @@ def update_item(
     if trip.owner_id != current_user.id and current_user.id not in participant_ids:
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
-    # Зміна "змісту" речі (назва, кількість, примітка, критичність, категорія)
-    # — тільки автор або організатор.
     content_changed = any(
         value is not None
         for value in (item_update.name, item_update.quantity, item_update.note,
@@ -114,13 +116,17 @@ def update_item(
                 )
             item.category_id = new_category.id
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
     db.refresh(item)
     return item
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
 def assign_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    item = db.get(models.Item, item_id)
+    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
 
@@ -146,7 +152,7 @@ def assign_item(item_id: int, db: Session = Depends(get_db), current_user: model
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
 def unassign_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    item = db.get(models.Item, item_id)
+    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
 

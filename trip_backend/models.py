@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -42,6 +42,7 @@ class Trip(Base):
 
 class Category(Base):
     __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("trip_id", "name", name="uq_categories_trip_name"),)
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
@@ -55,6 +56,7 @@ class Category(Base):
 
 class Item(Base):
     __tablename__ = "items"
+    __table_args__ = (UniqueConstraint("trip_id", "name", name="uq_items_trip_name"),)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True) 
