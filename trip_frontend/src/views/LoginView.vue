@@ -12,11 +12,11 @@ const redirectTo = route.query.redirect ? String(route.query.redirect) : '/'
 const previewTrip = ref(null)
 
 const loadTripPreview = async () => {
-  const match = redirectTo.match(/^\/trips\/(\d+)/)
+  const match = redirectTo.match(/^\/invite\/([A-Za-z0-9_-]+)/)
   if (!match) return
 
   try {
-    previewTrip.value = await api.get(`/trips/${match[1]}/preview`)
+    previewTrip.value = await api.get(`/trips/invite/${match[1]}/preview`)
   } catch (error) {
     previewTrip.value = null
   }

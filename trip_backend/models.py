@@ -34,6 +34,7 @@ class Trip(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
+    invite_token = Column(String, unique=True, index=True, nullable=False)
 
     owner = relationship("User", back_populates="owned_trips")
     participants = relationship("User", secondary=trip_users, back_populates="participating_trips")

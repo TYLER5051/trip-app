@@ -53,7 +53,9 @@ async function request(endpoint, { method = 'GET', body, headers = {}, form = fa
     const detail = data && data.detail
       ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
       : 'Щось пішло не так'
-    throw new Error(detail)
+    const error = new Error(detail)
+    error.status = res.status
+    throw error
   }
 
   return data

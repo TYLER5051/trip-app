@@ -1,14 +1,15 @@
 <script setup>
 import { ref } from 'vue'
 import { toast } from 'vue3-toastify'
+import api from '../services/api'
 
-defineProps({
+const props = defineProps({
   trip: { type: Object, required: true },
   currentUser: { type: String, required: true },
   isParticipant: { type: Boolean, required: true }
 })
 
-const emit = defineEmits(['join', 'leave', 'delete', 'rename'])
+const emit = defineEmits(['leave', 'delete', 'rename'])
 
 const isEditingTitle = ref(false)
 const newTitle = ref('')
@@ -19,35 +20,48 @@ const submitRename = () => {
   isEditingTitle.value = false
 }
 
-const copyTripLink = async () => {
+const buildInviteUrl = (token) => `${window.location.origin}/invite/${token}`
+
+const writeToClipboard = async (text) => {
+  // localhost HTTPS
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return true
+  }
+
+  // HTTP
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.style.position = 'absolute'
+  textArea.style.opacity = '0'
+
+  document.body.appendChild(textArea)
+  textArea.select()
+
+  const successful = document.execCommand('copy')
+  textArea.remove()
+  return successful
+}
+
+const copyInviteLink = async () => {
   try {
-    // localhost HTTPS
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(window.location.href)
-      toast.success('Посилання скопійовано! Відправте його друзям.')
-      return
-    }
-
-    // HTTP
-    const textArea = document.createElement("textarea")
-    textArea.value = window.location.href
-    
-    textArea.style.position = "absolute"
-    textArea.style.opacity = "0"
-    
-    document.body.appendChild(textArea)
-    textArea.select()
-    
-    const successful = document.execCommand('copy')
-    textArea.remove()
-
-    if (successful) {
-      toast.success('Посилання скопійовано! Відправте його друзям.')
-    } else {
-      throw new Error('Копіювання заблоковано браузером')
-    }
+    const { invite_token } = await api.get(`/trips/${props.trip.id}/invite`)
+    const copied = await writeToClipboard(buildInviteUrl(invite_token))
+    if (!copied) throw new Error('Копіювання заблоковано браузером')
+    toast.success('Інвайт-посилання скопійовано! Відправте його друзям.')
   } catch (error) {
-    toast.error('Браузер заблокував копіювання. Просто скопіюйте посилання з адресного рядка.')
+    toast.error(error.message || 'Не вдалося отримати інвайт-посилання')
+  }
+}
+
+const rotateInviteLink = async () => {
+  try {
+    const { invite_token } = await api.post(`/trips/${props.trip.id}/invite`)
+    const copied = await writeToClipboard(buildInviteUrl(invite_token))
+    if (!copied) throw new Error('Копіювання заблоковано браузером')
+    toast.success('Нове інвайт-посилання створено та скопійовано. Старе більше не діє!')
+  } catch (error) {
+    toast.error(error.message || 'Не вдалося змінити інвайт-посилання')
   }
 }
 </script>
@@ -58,14 +72,10 @@ const copyTripLink = async () => {
     <p class="owner">Організатор: <strong>{{ trip.owner?.username }}</strong></p>
     
     <div class="actions-bar">
-      <!-- Якщо ми НЕ організатор і ЩЕ НЕ учасник -->
-      <button 
-        v-if="trip.owner?.username !== currentUser && !isParticipant" 
-        @click="emit('join')" 
-        class="join-btn"
-      >
-        Приєднатися до поїздки
-      </button>
+      <!-- Якщо ми НЕ організатор і ЩЕ НЕ учасник: вступити можна лише за інвайт-посиланням -->
+      <div v-if="trip.owner?.username !== currentUser && !isParticipant" class="join-hint">
+        🔗 Щоб приєднатися, попросіть організатора надіслати інвайт-посилання
+      </div>
       
       <!-- Якщо ми ВЖЕ приєдналися -->
       <div v-if="trip.owner?.username !== currentUser && isParticipant" class="joined-status">
@@ -82,8 +92,11 @@ const copyTripLink = async () => {
         Видалити поїздку
       </button>
 
-      <button @click="copyTripLink" class="copy-link-btn">
-        Скопіювати посилання на поїздку
+      <button v-if="trip.owner?.username === currentUser" @click="copyInviteLink" class="copy-link-btn">
+        Скопіювати інвайт-посилання
+      </button>
+      <button v-if="trip.owner?.username === currentUser" @click="rotateInviteLink" class="rotate-invite-btn">
+        Нове інвайт-посилання
       </button>
 
       <!-- Перейменування поїздки (тільки організатор) -->
@@ -124,14 +137,27 @@ const copyTripLink = async () => {
   display: flex; 
   gap: 10px; 
 }
-.join-btn {
-  background-color: #3498db;
+.join-hint {
+  background-color: #eaf6ff;
+  color: #0277bd;
+  padding: 8px 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  font-weight: bold;
+  align-self: center;
+}
+.rotate-invite-btn {
+  background-color: #8e44ad;
   color: white;
   border: none;
-  padding: 8px 15px;
+  padding: 8px 16px;
   border-radius: 5px;
   cursor: pointer;
   font-weight: bold;
+  transition: background-color 0.3s;
+}
+.rotate-invite-btn:hover {
+  background-color: #732d91;
 }
 .joined-status {
   display: flex;

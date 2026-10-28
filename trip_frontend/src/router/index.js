@@ -15,6 +15,11 @@ const routes = [
     path: '/trips/:id',
     name: 'TripDetail',
     component: () => import('../views/TripDetailView.vue')
+  },
+  {
+    path: '/invite/:token',
+    name: 'InviteJoin',
+    component: () => import('../views/InviteView.vue')
   }
 ]
 

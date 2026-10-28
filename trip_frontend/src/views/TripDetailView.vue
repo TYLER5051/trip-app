@@ -16,6 +16,7 @@ const trip = ref(null)
 const categories = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
+const accessError = ref(false)
 
 // Отримуємо поточного користувача для перевірки прав
 const currentUser = localStorage.getItem('username')
@@ -31,7 +32,11 @@ const fetchTripData = async () => {
     trip.value = tripData
     categories.value = catsData
   } catch (error) {
-    errorMessage.value = error.message
+    if (error.status === 403 || error.status === 404) {
+      accessError.value = true
+    } else {
+      errorMessage.value = error.message
+    }
   } finally {
     isLoading.value = false
   }
@@ -91,16 +96,6 @@ const removeParticipant = async (participantId) => {
     await api.delete(`/trips/${tripId}/participants/${participantId}`)
     await fetchTripData()
     toast.success(freedCount > 0 ? `Речі учасника звільнено: ${freedCount} шт.` : 'Учасника видалено.')
-  } catch (error) {
-    toast.error(error.message)
-  }
-}
-
-// Приєднання до поїздки
-const joinTrip = async () => {
-  try {
-    await api.post(`/trips/${tripId}/join`)
-    await fetchTripData()
   } catch (error) {
     toast.error(error.message)
   }
@@ -304,6 +299,11 @@ onMounted(() => {
 <template>
   <div class="trip-detail-container">
     <div v-if="isLoading" class="loading">Завантаження поїздки...</div>
+    <div v-else-if="accessError" class="access-denied-card">
+      <div class="access-icon">🔒</div>
+      <h2>У вас немає доступу до цієї поїздки</h2>
+      <p>Запитайте інвайт-посилання в організатора.</p>
+    </div>
     <div v-else-if="errorMessage" class="error">{{ errorMessage }}</div>
 
     <div v-else-if="trip">
@@ -313,7 +313,6 @@ onMounted(() => {
         :trip="trip" 
         :currentUser="currentUser" 
         :isParticipant="isParticipant"
-        @join="joinTrip"
         @leave="leaveTrip"
         @delete="deleteTrip"
         @rename="renameTrip"
@@ -396,5 +395,23 @@ onMounted(() => {
   height: 100%;
   border-radius: 8px;
   transition: width 0.3s ease;
+}
+.access-denied-card {
+  background: white;
+  padding: 40px 30px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  text-align: center;
+  margin-top: 30px;
+}
+.access-denied-card h2 {
+  color: #2c3e50;
+  margin: 10px 0;
+}
+.access-denied-card p {
+  color: #7f8c8d;
+}
+.access-icon {
+  font-size: 48px;
 }
 </style>

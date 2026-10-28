@@ -18,8 +18,11 @@ def setup_trip(client, auth_headers):
     trip_id = client.post("/trips/", json={"title": "Похід"}, headers=org).json()["id"]
     cat1 = client.post(f"/trips/{trip_id}/categories/", json={"name": "Спорядження"}, headers=org).json()
     cat2 = client.post(f"/trips/{trip_id}/categories/", json={"name": "Харчі"}, headers=org).json()
-    client.post(f"/trips/{trip_id}/join", headers=u1)
-    client.post(f"/trips/{trip_id}/join", headers=u2)
+
+    invite_token = client.get(f"/trips/{trip_id}/invite", headers=org).json()["invite_token"]
+    for headers in (u1, u2):
+        r = client.post(f"/trips/invite/{invite_token}", headers=headers)
+        assert r.status_code == 200, r.text
 
     return trip_id, cat1["id"], cat2["id"], org, u1, u2
 

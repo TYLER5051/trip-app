@@ -6,6 +6,7 @@ from database import get_db
 from deps import get_current_user
 from typing import List
 import models, schemas
+import secrets
 
 router = APIRouter(prefix="/trips")
 
@@ -29,7 +30,11 @@ def create_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    db_trip = models.Trip(title=trip.title, owner_id=current_user.id)
+    db_trip = models.Trip(
+        title=trip.title,
+        owner_id=current_user.id,
+        invite_token=secrets.token_urlsafe(32),
+    )
 
     db.add(db_trip)
     db.commit()
@@ -81,20 +86,6 @@ def get_trips(db: Session = Depends(get_db), current_user: models.User = Depends
 
     return trips
 
-@router.get("/{trip_id}/preview")
-def preview_trip(trip_id: int, db: Session = Depends(get_db)):
-    trip = db.get(models.Trip, trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    return {
-        "id": trip.id,
-        "title": trip.title,
-        "owner": {"username": trip.owner.username} if trip.owner else None,
-        "participants_count": len(trip.participants),
-        "items_count": len(trip.items)
-    }
-
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     trip = (
@@ -105,6 +96,9 @@ def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.U
     )
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    if trip.owner_id != current_user.id and current_user.id not in [p.id for p in trip.participants]:
+        raise HTTPException(status_code=403, detail="У вас немає доступу до цієї поїздки")
 
     return _with_stats(trip)
 
@@ -170,6 +164,9 @@ def get_categories_for_trip(
     trip = db.get(models.Trip, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    if trip.owner_id != current_user.id and current_user.id not in [p.id for p in trip.participants]:
+        raise HTTPException(status_code=403, detail="У вас немає доступу до цієї поїздки")
 
     return db.query(models.Category).filter(models.Category.trip_id == trip.id).all()
 
