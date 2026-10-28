@@ -37,13 +37,20 @@ const itemFull = (item) => !!(item.assigned_users && item.assigned_users.length 
 const showOnlyFree = ref(false)
 const showMyItems = ref(false)
 const sortByStatus = ref('free-first')
+const showOnlyCritical = ref(false)
+const selectedCategory = ref('')
 
-// Відфільтровані/відсортовані речі (в межах кожної категорії)
+// Відфільтровані/відсортовані речі (в межах кожної категорії) — лише клієнтська фільтрація, без запитів до API.
 const filteredGroups = computed(() => {
   const result = {}
+  const filtersActive = showOnlyFree.value || showMyItems.value || showOnlyCritical.value || !!selectedCategory.value
 
   Object.entries(props.groupedItems).forEach(([categoryName, items]) => {
     let list = items
+
+    if (selectedCategory.value && selectedCategory.value !== categoryName) {
+      list = []
+    }
 
     if (showOnlyFree.value) {
       list = list.filter(item => !item.assigned_users || item.assigned_users.length === 0)
@@ -56,6 +63,10 @@ const filteredGroups = computed(() => {
       )
     }
 
+    if (showOnlyCritical.value) {
+      list = list.filter(item => item.is_critical)
+    }
+
     if (sortByStatus.value !== 'none') {
       const freeFirst = sortByStatus.value === 'free-first'
       list = [...list].sort((a, b) => {
@@ -65,7 +76,11 @@ const filteredGroups = computed(() => {
       })
     }
 
-    if (list.length) result[categoryName] = list
+    // Без фільтрів показуємо навіть порожні категорії (формат "0/0", їх можна видалити);
+    // з фільтрами — лише категорії, в яких щось залишилось.
+    if ((filtersActive && list.length) || !filtersActive) {
+      result[categoryName] = list
+    }
   })
 
   return result
@@ -133,6 +148,11 @@ const saveCategoryRename = (cat) => {
   }
   cancelCategoryRename()
 }
+
+const getCategoryProgress = (items = []) => {
+  const packed = items.filter(item => item.assigned_users && item.assigned_users.length > 0).length
+  return `${packed}/${items.length}`
+}
 </script>
 
 <template>
@@ -151,6 +171,10 @@ const saveCategoryRename = (cat) => {
           Показати тільки невзяті
         </label>
         <label class="filter-check">
+          <input type="checkbox" v-model="showOnlyCritical">
+          Показати тільки важливі
+        </label>
+        <label class="filter-check">
           <input type="checkbox" v-model="showMyItems" />
           Мої речі
         </label>
@@ -161,15 +185,21 @@ const saveCategoryRename = (cat) => {
             <option value="none">Сортування: за замовчуванням</option>
           </select>
         </label>
+        <label class="filter-sort">
+          <select v-model="selectedCategory" class="filter-select">
+            <option value="">Всі категорії</option>
+            <option v-for="cat in categories" :key="cat.id" :value="cat.name">{{ cat.name }}</option>
+          </select>
+        </label>
       </div>
 
       <div v-if="Object.keys(filteredGroups).length === 0" class="empty">
-        За вибраними фільтрами речей не знайдено.
+        За вашими фільтрами нічого не знайдено.
       </div>
 
       <div v-for="(items, categoryName) in filteredGroups" :key="categoryName" class="category-group">
         <div class="category-header">
-          <h4 class="category-title"> {{ categoryName }}</h4>
+          <h3 class="category-title">{{ categoryName }}: {{ getCategoryProgress(props.groupedItems[categoryName] || []) }}</h3>
           <div v-if="catFor(categoryName)" class="category-actions">
             <template v-if="isCategoryEditing(catFor(categoryName))">
               <input
@@ -344,6 +374,10 @@ const saveCategoryRename = (cat) => {
   color: #34495e;
   background: white;
   cursor: pointer;
+}
+.filter-sort {
+  display: flex;
+  align-items: center;
 }
 .category-group {
   margin-bottom: 20px;
