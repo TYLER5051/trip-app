@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user
-from typing import List
+from typing import List, Optional
 import models, schemas
 import secrets
 
@@ -41,29 +41,40 @@ def create_trip(
     db.refresh(db_trip)
     return db_trip
 
-@router.get("/", response_model=list[schemas.TripSummaryResponse])
-def get_trips(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    trips = (
-        db.query(models.Trip)
-        .filter(
-            or_(
-                models.Trip.owner_id == current_user.id,
-                models.Trip.participants.any(models.User.id == current_user.id),
-            )
+@router.get("/", response_model=schemas.TripListResponse)
+def get_trips(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    q: Optional[str] = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0)):
+
+    query_text = q.strip() if q else ""
+    base = db.query(models.Trip).filter(
+        or_(
+            models.Trip.owner_id == current_user.id,
+            models.Trip.participants.any(models.User.id == current_user.id),
         )
-        .options(
+    )
+
+    if query_text:
+        base = base.filter(models.Trip.title.ilike(f"%{query_text}%"))
+
+    total = base.count()
+    
+    trips = (
+        base.options(
             selectinload(models.Trip.owner),
             selectinload(models.Trip.participants),
         )
         .order_by(
-            case((models.Trip.owner_id == current_user.id, 0), else_=1), 
-            models.Trip.id
+            case((models.Trip.owner_id == current_user.id, 0), else_=1),
+            models.Trip.id,
         )
+        .offset(offset)
+        .limit(limit)
         .all()
     )
-    
-    if not trips:
-        return []
 
     trip_ids = [t.id for t in trips]
     stats_rows = (
@@ -77,6 +88,7 @@ def get_trips(db: Session = Depends(get_db), current_user: models.User = Depends
         .group_by(models.Item.trip_id)
         .all()
     )
+
     stats = {row.trip_id: row for row in stats_rows}
 
     for trip in trips:
@@ -84,7 +96,7 @@ def get_trips(db: Session = Depends(get_db), current_user: models.User = Depends
         trip.total_items = row.total_items if row else 0
         trip.packed_items = row.packed_items if row else 0
 
-    return trips
+    return {"items": trips, "total": total, "limit": limit, "offset": offset}
 
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):

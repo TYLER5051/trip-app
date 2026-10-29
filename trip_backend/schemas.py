@@ -78,5 +78,11 @@ class TripSummaryResponse(TripBase):
     packed_items: int = 0
     model_config = ConfigDict(from_attributes=True)
 
+class TripListResponse(BaseModel):
+    items: List[TripSummaryResponse]
+    total: int
+    limit: int
+    offset: int 
+
 class InviteTokenResponse(BaseModel):
     invite_token: str

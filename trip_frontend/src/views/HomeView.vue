@@ -1,38 +1,75 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import api from '../services/api'
 
 const trips = ref([])
 const isLoading = ref(true)
+const isLoadingMore = ref(false)
 const errorMessage = ref('')
 const currentUser = localStorage.getItem('username')
 
-const searchQuery = ref('')
-const filteredTrips = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return trips.value
-  return trips.value.filter(t => (t.title || '').toLowerCase().includes(q))
+const searchInput = ref('')
+const q = ref('')
+const limit = 20
+const total = ref(0)
+const offset = ref(0)
+
+let searchTimer = null
+
+watch(searchInput, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    q.value = searchInput.value.trim()
+    fetchTrips()
+  }, 300)
 })
+
+const packingPercent = (trip) => {
+  const totalItems = trip.total_items || 0
+  if (!totalItems) return 0
+  return Math.round(((trip.packed_items || 0) / totalItems) * 100)
+}
 
 const newTripTitle = ref('')
 const isCreating = ref(false)
 const createError = ref('')
 
-const fetchTrips = async () => {
+const buildQuery = () => {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  params.set('offset', String(offset.value))
+  if (q.value) params.set('q', q.value)
+  return params.toString()
+}
+
+const fetchTrips = async (reset = true) => {
+  if (reset) {
+    offset.value = 0
+    trips.value = []
+    isLoading.value = true
+  } else {
+    isLoadingMore.value = true
+  }
+  errorMessage.value = ''
+
   try {
-    trips.value = await api.get('/trips/')
+    const data = await api.get(`/trips/?${buildQuery()}`)
+    trips.value = reset ? data.items : [...trips.value, ...data.items]
+    total.value = data.total
   } catch (error) {
     errorMessage.value = error.message
   } finally {
-    isLoading.value = false 
+    isLoading.value = false
+    isLoadingMore.value = false
   }
 }
 
-const packingPercent = (trip) => {
-  const total = trip.total_items || 0
-  if (!total) return 0
-  return Math.round(((trip.packed_items || 0) / total) * 100)
+const loadMore = () => {
+  offset.value += limit
+  fetchTrips(false)
 }
+
+const hasMore = computed(() => trips.value.length < total.value)
 
 const createTrip = async () => {
   if (!newTripTitle.value.trim()) return
@@ -81,54 +118,65 @@ onMounted(() => {
       <div v-if="createError" class="error-message">{{ createError }}</div>
     </div>
 
-    <div v-if="isLoading" class="loading">Завантаження даних...</div>
-    <div v-else-if="errorMessage" class="error">{{ errorMessage }}</div>
-    
-    <div v-else-if="trips.length === 0" class="empty">
-      Поки що немає жодної поїздки. Створи першу вище!
+    <div class="search-section">
+      <input
+        type="text"
+        v-model="searchInput"
+        placeholder="Пошук поїздок за назвою..."
+        class="search-input"
+      />
     </div>
 
-    <div v-else>
-      <div class="search-section">
-        <input
-          type="text"
-          v-model="searchQuery"
-          placeholder="Пошук поїздок за назвою..."
-          class="search-input"
-        />
-      </div>
+    <div v-if="isLoading && trips.length === 0" class="loading">Завантаження даних...</div>
+    <div v-else-if="errorMessage" class="error">{{ errorMessage }}</div>
 
-      <div v-if="filteredTrips.length === 0" class="empty">
+    <template v-else>
+      <div v-if="trips.length === 0 && q" class="empty">
         За пошуком нічого не знайдено.
       </div>
 
-      <div v-else class="trip-grid">
-        <router-link 
-          v-for="trip in filteredTrips" 
-          :key="trip.id" 
-          :to="`/trips/${trip.id}`" 
-          class="trip-card-link"
-        >
-          <div class="trip-card">
-            <h2>{{ trip.title }}</h2>
-            <p class="owner" v-if="trip.owner">
-              Організатор: <strong>{{ trip.owner.username }}</strong>
-            </p>
-            <p class="participants">
-              Учасників: {{ trip.participants ? trip.participants.length : 0 }}
-            </p>
-            <div class="packing-progress">
-              <div class="progress-label">
-                Зібрано {{ trip.packed_items ?? 0 }} із {{ trip.total_items ?? 0 }} речей ({{ packingPercent(trip) }}%)
-              </div>
-              <div class="progress-track">
-                <div class="progress-fill" :style="{ width: packingPercent(trip) + '%' }"></div>
+      <div v-else-if="total === 0" class="empty">
+        Поки що немає жодної поїздки. Створи першу вище!
+      </div>
+
+      <template v-else>
+        <div class="trip-grid">
+          <router-link 
+            v-for="trip in trips" 
+            :key="trip.id" 
+            :to="`/trips/${trip.id}`" 
+            class="trip-card-link"
+          >
+            <div class="trip-card">
+              <h2>{{ trip.title }}</h2>
+              <p class="owner" v-if="trip.owner">
+                Організатор: <strong>{{ trip.owner.username }}</strong>
+              </p>
+              <p class="participants">
+                Учасників: {{ trip.participants ? trip.participants.length : 0 }}
+              </p>
+              <div class="packing-progress">
+                <div class="progress-label">
+                  Зібрано {{ trip.packed_items ?? 0 }} із {{ trip.total_items ?? 0 }} речей ({{ packingPercent(trip) }}%)
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill" :style="{ width: packingPercent(trip) + '%' }"></div>
+                </div>
               </div>
             </div>
-          </div>
-        </router-link>
-      </div>
-    </div>
+          </router-link>
+        </div>
+
+        <button 
+          v-if="hasMore" 
+          class="load-more" 
+          :disabled="isLoadingMore" 
+          @click="loadMore"
+        >
+          {{ isLoadingMore ? 'Завантаження...' : 'Показати ще' }}
+        </button>
+      </template>
+    </template>
   </div>
 </template>
 
@@ -172,6 +220,24 @@ h1 {
 .search-input:focus {
   outline: none;
   border-color: #42b883;
+}
+.load-more {
+  display: block;
+  margin: 25px auto 0;
+  background-color: #42b883;
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.load-more:hover {
+  background-color: #35495e;
+}
+.load-more:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .create-trip-card {
   background: white;

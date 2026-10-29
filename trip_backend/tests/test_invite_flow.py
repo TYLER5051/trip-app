@@ -34,8 +34,9 @@ def test_join_by_invite_token(client, auth_headers):
     assert r.status_code == 200, r.text
     assert r.json()["trip_id"] == trip["id"]
 
-    trips = client.get("/trips/", headers=guest).json()
-    assert [t["id"] for t in trips] == [trip["id"]]
+    data = client.get("/trips/", headers=guest).json()
+    assert data["total"] == 1
+    assert [t["id"] for t in data["items"]] == [trip["id"]]
 
 
 def test_join_requires_authenticated_user(client, auth_headers):
