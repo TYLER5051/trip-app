@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone, timedelta
 from database import get_db
 from deps import get_current_user
 import models, schemas
@@ -36,6 +37,7 @@ def rotate_invite_token(
         raise HTTPException(status_code=403, detail="Тільки організатор може змінити інвайт-токен")
 
     trip.invite_token = secrets.token_urlsafe(32)
+    trip.invite_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     db.commit()
     return {"invite_token": trip.invite_token}
 
@@ -47,7 +49,7 @@ def join_by_invite_token(
     current_user: models.User = Depends(get_current_user)
 ):
     trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
-    if trip is None:
+    if trip is None or (trip.invite_expires_at is not None and trip.invite_expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail="Інвайт-токен недійсний")
 
     if trip.owner_id == current_user.id:
@@ -68,7 +70,7 @@ def join_by_invite_token(
 @router.get("/invite/{token}/preview")
 def preview_invite(token: str, db: Session = Depends(get_db)):
     trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
-    if trip is None:
+    if trip is None or (trip.invite_expires_at is not None and trip.invite_expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail="Інвайт-токен недійсний")
 
     return {

@@ -97,6 +97,21 @@ def test_search_only_within_accessible_trips(client, auth_headers):
     assert res_guest["total"] == 0
 
 
+def test_search_wildcards_are_escaped(client, auth_headers):
+    org = auth_headers("org")
+    create_trip(client, org, "Поїздка з символом відсотка 100%")
+    create_trip(client, org, "Поїздка_з_підкресленнями")
+
+    # % і _ у запиті шукаються як літерали, а не wildcard'и ILIKE:
+    # кожен запит знаходить лише власну поїздку (до екранування % знайшов би всі)
+    assert get_trips(client, org, q="%")["total"] == 1
+    assert get_trips(client, org, q="_")["total"] == 1
+
+    # Звичайний пошук підстроки, що містить % / _, працює як раніше
+    assert get_trips(client, org, q="відсотка")["total"] == 1
+    assert get_trips(client, org, q="підкресленнями")["total"] == 1
+
+
 def test_invalid_pagination_params_rejected(client, auth_headers):
     org = auth_headers("org")
 

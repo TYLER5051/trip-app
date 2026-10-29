@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Table, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -35,6 +35,7 @@ class Trip(Base):
     title = Column(String, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
     invite_token = Column(String, unique=True, index=True, nullable=False)
+    invite_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User", back_populates="owned_trips")
     participants = relationship("User", secondary=trip_users, back_populates="participating_trips")

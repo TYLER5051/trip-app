@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timezone, timedelta
 from database import get_db
 from deps import get_current_user
 from typing import List, Optional
@@ -34,6 +35,7 @@ def create_trip(
         title=trip.title,
         owner_id=current_user.id,
         invite_token=secrets.token_urlsafe(32),
+        invite_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
 
     db.add(db_trip)
@@ -58,7 +60,8 @@ def get_trips(
     )
 
     if query_text:
-        base = base.filter(models.Trip.title.ilike(f"%{query_text}%"))
+        escaped = query_text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+        base = base.filter(models.Trip.title.ilike(f"%{escaped}%", escape="\\"))
 
     total = base.count()
     
