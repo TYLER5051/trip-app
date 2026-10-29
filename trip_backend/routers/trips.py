@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
 from deps import get_current_user
+from permissions import user_is_member
 from typing import List, Optional
 import models, schemas
 import secrets
@@ -40,8 +41,12 @@ def create_trip(
 
     db.add(db_trip)
     db.commit()
-    db.refresh(db_trip)
-    return db_trip
+    return (
+        db.query(models.Trip)
+        .options(*_TRIP_LOAD_OPTIONS)
+        .filter(models.Trip.id == db_trip.id)
+        .first()
+    )
 
 @router.get("/", response_model=schemas.TripListResponse)
 def get_trips(
@@ -128,8 +133,7 @@ def create_category_for_trip(
     if trip_db is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    participant_ids = [p.id for p in trip_db.participants]
-    if trip_db.owner_id != current_user.id and current_user.id not in participant_ids:
+    if trip_db.owner_id != current_user.id and not user_is_member(db, trip_db, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     existing_cat = db.query(models.Category).filter(
@@ -156,7 +160,12 @@ def update_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    trip = db.get(models.Trip, trip_id)
+    trip = (
+        db.query(models.Trip)
+        .options(*_TRIP_LOAD_OPTIONS)
+        .filter(models.Trip.id == trip_id)
+        .first()
+    )
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
@@ -180,7 +189,7 @@ def get_categories_for_trip(
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    if trip.owner_id != current_user.id and current_user.id not in [p.id for p in trip.participants]:
+    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="У вас немає доступу до цієї поїздки")
 
     return db.query(models.Category).filter(models.Category.trip_id == trip.id).all()

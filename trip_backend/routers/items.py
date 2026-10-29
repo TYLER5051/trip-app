@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user
+from permissions import user_is_member
 import models, schemas
 
 router = APIRouter(prefix="/items")
@@ -13,8 +14,7 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    participant_ids = [p.id for p in trip.participants]
-    if trip.owner_id != current_user.id and current_user.id not in participant_ids:
+    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     category = db.get(models.Category, item.category_id)
@@ -67,8 +67,7 @@ def update_item(
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    participant_ids = [p.id for p in trip.participants]
-    if trip.owner_id != current_user.id and current_user.id not in participant_ids:
+    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     content_changed = any(
@@ -134,8 +133,7 @@ def assign_item(item_id: int, db: Session = Depends(get_db), current_user: model
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    participant_ids = [p.id for p in trip.participants]
-    if trip.owner_id != current_user.id and current_user.id not in participant_ids:
+    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     if current_user in item.assigned_users:
@@ -160,8 +158,7 @@ def unassign_item(item_id: int, db: Session = Depends(get_db), current_user: mod
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    participant_ids = [p.id for p in trip.participants]
-    if trip.owner_id != current_user.id and current_user.id not in participant_ids:
+    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
     if current_user not in item.assigned_users:

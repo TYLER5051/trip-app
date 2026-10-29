@@ -5,15 +5,15 @@ from database import Base
 trip_users = Table(
     "trip_users",
     Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
-    Column("trip_id", Integer, ForeignKey("trips.id"), primary_key=True)
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True),
+    Column("trip_id", Integer, ForeignKey("trips.id"), primary_key=True, index=True)
 )
 
 item_assignments = Table(
     "item_assignments",
     Base.metadata,
-    Column("item_id", Integer, ForeignKey("items.id"), primary_key=True),
-    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True)
+    Column("item_id", Integer, ForeignKey("items.id"), primary_key=True, index=True),
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True)
 )
 
 class User(Base):
@@ -33,7 +33,7 @@ class Trip(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)
     invite_token = Column(String, unique=True, index=True, nullable=False)
     invite_expires_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -48,8 +48,8 @@ class Category(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"))
-    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), index=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     items = relationship("Item", back_populates="category")
     trip = relationship("Trip", back_populates="categories")
@@ -66,10 +66,10 @@ class Item(Base):
     note = Column(String, nullable=True)
     is_critical = Column(Boolean, default=False)
 
-    trip_id = Column(Integer, ForeignKey("trips.id"))
-    category_id = Column(Integer, ForeignKey("categories.id"))
+    trip_id = Column(Integer, ForeignKey("trips.id"), index=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), index=True)
     
-    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     trip = relationship("Trip", back_populates="items")
     category = relationship("Category", back_populates="items")
