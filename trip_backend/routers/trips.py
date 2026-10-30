@@ -4,8 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
-from deps import get_current_user
-from permissions import user_is_member
+from deps import get_current_user, get_accessible_trip
 from typing import List, Optional
 import models, schemas
 import secrets
@@ -52,10 +51,10 @@ def create_trip(
 def get_trips(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
-    q: Optional[str] = None,
+    q: Optional[str] = Query(default=None, max_length=100),
     limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0)):
-
+    offset: int = Query(default=0, ge=0)
+):
     query_text = q.strip() if q else ""
     base = db.query(models.Trip).filter(
         or_(
@@ -107,7 +106,11 @@ def get_trips(
     return {"items": trips, "total": total, "limit": limit, "offset": offset}
 
 @router.get("/{trip_id}", response_model=schemas.TripResponse)
-def get_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def get_trip(
+    trip_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
     trip = (
         db.query(models.Trip)
         .options(*_TRIP_LOAD_OPTIONS)
@@ -127,15 +130,9 @@ def create_category_for_trip(
     trip_id: int,
     category: schemas.CategoryCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
+    trip: models.Trip = Depends(get_accessible_trip)
 ):
-    trip_db = db.get(models.Trip, trip_id)
-    if trip_db is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    if trip_db.owner_id != current_user.id and not user_is_member(db, trip_db, current_user.id):
-        raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
-
     existing_cat = db.query(models.Category).filter(
         models.Category.name == category.name,
         models.Category.trip_id == trip_id
@@ -183,16 +180,10 @@ def update_trip(
 def get_categories_for_trip(
     trip_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
+    trip: models.Trip = Depends(get_accessible_trip)
 ):
-    trip = db.get(models.Trip, trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
-        raise HTTPException(status_code=403, detail="У вас немає доступу до цієї поїздки")
-
-    return db.query(models.Category).filter(models.Category.trip_id == trip.id).all()
+    return db.query(models.Category).options(selectinload(models.Category.created_by)).filter(models.Category.trip_id == trip.id).all()
 
 @router.patch("/{trip_id}/categories/{category_id}", response_model=schemas.CategoryResponse)
 def update_categories_for_trip(

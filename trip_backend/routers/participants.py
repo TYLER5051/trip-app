@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import delete, func, select
 from database import get_db
-from deps import get_current_user
-from permissions import user_is_member
+from deps import get_current_user, user_is_member
 import models, schemas
 import secrets
 
@@ -60,8 +60,13 @@ def join_by_invite_token(
     if user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=400, detail="Ви вже приєдналися до цієї поїздки")
 
-    trip.participants.append(current_user)
-    db.commit()
+    try:
+        trip.participants.append(current_user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Ви вже є учасником цієї поїздки")
+    
     return {
         "message": "Ви приєдналися до поїздки",
         "trip_id": trip.id,
@@ -70,7 +75,10 @@ def join_by_invite_token(
 
 
 @router.get("/invite/{token}/preview")
-def preview_invite(token: str, db: Session = Depends(get_db)):
+def preview_invite(
+    token: str, 
+    db: Session = Depends(get_db)
+):
     trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
     if trip is None or (trip.invite_expires_at is not None and trip.invite_expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail="Інвайт-токен недійсний")
@@ -142,19 +150,19 @@ def leave_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    trip_db = db.get(models.Trip, trip_id)
-    if trip_db is None:
+    trip = db.get(models.Trip, trip_id)
+    if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    if not user_is_member(db, trip_db, current_user.id):
+    if not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=400, detail="Ви не є учасником цієї поїздки")
 
-    if trip_db.owner_id == current_user.id:
+    if trip.owner_id == current_user.id:
         raise HTTPException(status_code=400, detail="Організатор не може вийти, він може лише видалити поїздку")
 
     db.execute(
         delete(models.trip_users).where(
-            models.trip_users.c.trip_id == trip_db.id,
+            models.trip_users.c.trip_id == trip.id,
             models.trip_users.c.user_id == current_user.id,
         )
     )
@@ -162,7 +170,7 @@ def leave_trip(
         delete(models.item_assignments).where(
             models.item_assignments.c.user_id == current_user.id,
             models.item_assignments.c.item_id.in_(
-                select(models.Item.id).where(models.Item.trip_id == trip_db.id)
+                select(models.Item.id).where(models.Item.trip_id == trip.id)
             ),
         )
     )

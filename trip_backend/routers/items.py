@@ -2,14 +2,17 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from database import get_db
-from deps import get_current_user
-from permissions import user_is_member
+from deps import get_current_user, user_is_member
 import models, schemas
 
 router = APIRouter(prefix="/items")
 
 @router.post("/", response_model=schemas.ItemResponse)
-def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def create_item(
+    item: schemas.ItemCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
     trip = db.get(models.Trip, item.trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
@@ -124,7 +127,10 @@ def update_item(
     return item
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
-def assign_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def assign_item(
+    item_id: int, db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
     item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
@@ -142,14 +148,23 @@ def assign_item(item_id: int, db: Session = Depends(get_db), current_user: model
     if len(item.assigned_users) >= item.quantity:
         raise HTTPException(status_code=400, detail="Цю річ уже розібрали — кількість вичерпана")
 
-    item.assigned_users.append(current_user)
-    db.commit()
+    try:
+        item.assigned_users.append(current_user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
+    
     db.refresh(item)
     return item
 
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
-def unassign_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def unassign_item(
+    item_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)  
+):
     item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
@@ -164,13 +179,22 @@ def unassign_item(item_id: int, db: Session = Depends(get_db), current_user: mod
     if current_user not in item.assigned_users:
         raise HTTPException(status_code=400, detail="Ви не брали цю річ")
 
-    item.assigned_users.remove(current_user)
-    db.commit()
+    try:
+        item.assigned_users.remove(current_user)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Ви не брали цю річ")
+    
     db.refresh(item)
     return item
 
 @router.delete("/{item_id}")
-def delete_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def delete_item(
+    item_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
     item = db.get(models.Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
@@ -188,6 +212,11 @@ def delete_item(item_id: int, db: Session = Depends(get_db), current_user: model
     if trip.owner_id != current_user.id and item.created_by_id != current_user.id:
         raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
     
-    db.delete(item)
-    db.commit()
+    try:
+        db.delete(item)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status=400, detail="")
+    
     return {"message": f"Річ '{item.name}' видалена"}
