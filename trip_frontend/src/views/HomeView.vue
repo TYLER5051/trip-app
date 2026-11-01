@@ -153,7 +153,7 @@ onMounted(() => {
                 Організатор: <strong>{{ trip.owner.username }}</strong>
               </p>
               <p class="participants">
-                Учасників: {{ trip.participants ? trip.participants.length : 0 }}
+                Учасників: {{ trip.participants_count ?? 0 }}
               </p>
               <div class="packing-progress">
                 <div class="progress-label">

@@ -87,7 +87,6 @@ def get_trips(
     trips = (
         base.options(
             selectinload(models.Trip.owner),
-            selectinload(models.Trip.participants),
         )
         .order_by(
             case((models.Trip.owner_id == current_user.id, 0), else_=1),
@@ -110,13 +109,24 @@ def get_trips(
         .group_by(models.Item.trip_id)
         .all()
     )
+    participant_rows = (
+        db.query(
+            models.trip_users.c.trip_id,
+            func.count(models.trip_users.c.user_id),
+        )
+        .filter(models.trip_users.c.trip_id.in_(trip_ids))
+        .group_by(models.trip_users.c.trip_id)
+        .all()
+    )
 
     stats = {row.trip_id: row for row in stats_rows}
+    participant_counts = {trip_id: count for trip_id, count in participant_rows}
 
     for trip in trips:
         row = stats.get(trip.id)
         trip.total_items = row.total_items if row else 0
         trip.packed_items = row.packed_items if row else 0
+        trip.participants_count = participant_counts.get(trip.id, 0)
 
     return {"items": trips, "total": total, "limit": limit, "offset": offset}
 
@@ -291,8 +301,12 @@ def delete_category(
     db.query(models.Item).filter(models.Item.category_id == category.id).update(
         {models.Item.category_id: None}
     )
-    db.delete(category)
-    db.commit()
+    try:
+        db.delete(category)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Категорію неможливо видалити, спробуйте ще раз")
 
     if items_moved:
         return {"message": f"Категорію '{category_name}' видалено. Речей перенесено до «Інше»: {items_moved}"}

@@ -99,6 +99,8 @@ def update_item(
             item.name = item_update.name
 
         if item_update.quantity is not None:
+            if item_update.quantity < len(item.assigned_users):
+                raise HTTPException(status_code=400, detail="Кількість не може бути меншою за кількість уже призначених людей")
             item.quantity = item_update.quantity
 
         if item_update.note is not None:

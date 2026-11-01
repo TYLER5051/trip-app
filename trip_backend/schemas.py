@@ -84,7 +84,7 @@ class TripDetailResponse(TripBase):
 class TripSummaryResponse(TripBase):
     id: int
     owner: UserResponse
-    participants: List[UserResponse] = Field(default_factory=list)
+    participants_count: int = 0
     total_items: int = 0
     packed_items: int = 0
     model_config = ConfigDict(from_attributes=True)

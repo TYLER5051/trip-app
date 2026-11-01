@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from database import get_db
 import auth
@@ -55,7 +55,11 @@ def get_accessible_trip(
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
 ):
-    trip = db.get(models.Trip, trip_id)
+    trip = db.query(models.Trip).options(
+        selectinload(models.Trip.owner),
+        selectinload(models.Trip.participants)
+    ).filter(models.Trip.id == trip_id).first()
+
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
@@ -69,7 +73,10 @@ def get_owned_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ) -> models.Trip:
-    trip = db.get(models.Trip, trip_id)
+    trip = db.query(models.Trip).options(
+        selectinload(models.Trip.owner),
+        selectinload(models.Trip.participants)
+    ).filter(models.Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
     if trip.owner_id != current_user.id:
