@@ -1,31 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
-from deps import get_current_user, get_accessible_trip
+from deps import get_current_user, get_accessible_trip, get_owned_trip
+from rate_limit import limiter
 from typing import List, Optional
 import models, schemas
 import secrets
 
 router = APIRouter(prefix="/trips")
 
-_TRIP_LOAD_OPTIONS = (
-    selectinload(models.Trip.items).selectinload(models.Item.assigned_users),
-    selectinload(models.Trip.items).selectinload(models.Item.created_by),
-    selectinload(models.Trip.items).selectinload(models.Item.category)
-        .selectinload(models.Category.created_by),
-    selectinload(models.Trip.owner),
-    selectinload(models.Trip.participants),
+_ITEM_LOAD_OPTIONS = (
+    selectinload(models.Item.assigned_users),
+    selectinload(models.Item.created_by),
+    selectinload(models.Item.category).selectinload(models.Category.created_by),
 )
 
-def _with_stats(trip):
-    trip.total_items = len(trip.items)
-    trip.packed_items = sum(1 for item in trip.items if item.assigned_users)
-    return trip
+def _stats_for_trip(db: Session, trip_id: int):
+    """Підраховує total_items/packed_items одним агрегованим запитом —
+    без завантаження всього списку речей у пам'ять."""
+    row = (
+        db.query(
+            func.count(func.distinct(models.Item.id)).label("total_items"),
+            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
+        )
+        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(models.Item.trip_id == trip_id)
+        .one()
+    )
+    return row.total_items, row.packed_items
 
-@router.post("/", response_model=schemas.TripResponse)
+@router.post("/", response_model=schemas.TripDetailResponse)
 def create_trip(
     trip: schemas.TripCreate,
     db: Session = Depends(get_db),
@@ -40,15 +47,23 @@ def create_trip(
 
     db.add(db_trip)
     db.commit()
-    return (
+
+    created = (
         db.query(models.Trip)
-        .options(*_TRIP_LOAD_OPTIONS)
+        .options(
+            selectinload(models.Trip.owner),
+            selectinload(models.Trip.participants),
+        )
         .filter(models.Trip.id == db_trip.id)
         .first()
     )
+    created.total_items, created.packed_items = _stats_for_trip(db, db_trip.id)
+    return created
 
 @router.get("/", response_model=schemas.TripListResponse)
+@limiter.limit("100/minute")
 def get_trips(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     q: Optional[str] = Query(default=None, max_length=100),
@@ -105,25 +120,16 @@ def get_trips(
 
     return {"items": trips, "total": total, "limit": limit, "offset": offset}
 
-@router.get("/{trip_id}", response_model=schemas.TripResponse)
+@router.get("/{trip_id}", response_model=schemas.TripDetailResponse)
+@limiter.limit("100/minute")
 def get_trip(
-    trip_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: models.User = Depends(get_current_user)
+    request: Request,
+    trip_id: int,
+    db: Session = Depends(get_db),
+    trip: models.Trip = Depends(get_accessible_trip),
 ):
-    trip = (
-        db.query(models.Trip)
-        .options(*_TRIP_LOAD_OPTIONS)
-        .filter(models.Trip.id == trip_id)
-        .first()
-    )
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    if trip.owner_id != current_user.id and current_user.id not in [p.id for p in trip.participants]:
-        raise HTTPException(status_code=403, detail="У вас немає доступу до цієї поїздки")
-
-    return _with_stats(trip)
+    trip.total_items, trip.packed_items = _stats_for_trip(db, trip_id)
+    return trip
 
 @router.post("/{trip_id}/categories/", response_model=schemas.CategoryResponse)
 def create_category_for_trip(
@@ -150,40 +156,68 @@ def create_category_for_trip(
     db.refresh(new_cat)
     return new_cat
 
-@router.patch("/{trip_id}", response_model=schemas.TripResponse)
+@router.patch("/{trip_id}", response_model=schemas.TripDetailResponse)
 def update_trip(
     trip_id: int,
     trip_update: schemas.TripUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    trip: models.Trip = Depends(get_owned_trip)
 ):
-    trip = (
-        db.query(models.Trip)
-        .options(*_TRIP_LOAD_OPTIONS)
-        .filter(models.Trip.id == trip_id)
-        .first()
-    )
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    if trip.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Тільки організатор може змінювати назву")
-
     if trip_update.title is not None:
         trip.title = trip_update.title
 
     db.commit()
     db.refresh(trip)
-    return _with_stats(trip)
+    trip.total_items, trip.packed_items = _stats_for_trip(db, trip_id)
+    return trip
 
 @router.get("/{trip_id}/categories/", response_model=List[schemas.CategoryResponse])
+@limiter.limit("100/minute")
 def get_categories_for_trip(
+    request: Request,
     trip_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
     trip: models.Trip = Depends(get_accessible_trip)
 ):
     return db.query(models.Category).options(selectinload(models.Category.created_by)).filter(models.Category.trip_id == trip.id).all()
+
+@router.get("/{trip_id}/items/", response_model=schemas.ItemListResponse)
+@limiter.limit("100/minute")
+def get_trip_items(
+    request: Request,
+    trip_id: int,
+    db: Session = Depends(get_db),
+    trip: models.Trip = Depends(get_accessible_trip),
+    q: Optional[str] = Query(default=None, max_length=100),
+    category_id: Optional[int] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    query_text = q.strip() if q else ""
+    base = db.query(models.Item).filter(models.Item.trip_id == trip_id)
+
+    if query_text:
+        escaped = query_text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+        base = base.filter(models.Item.name.ilike(f"%{escaped}%", escape="\\"))
+
+    if category_id is not None:
+        base = base.filter(models.Item.category_id == category_id)
+
+    if assignee_id is not None:
+        base = base.filter(models.Item.assigned_users.any(models.User.id == assignee_id))
+
+    total = base.count()
+
+    items = (
+        base.options(*_ITEM_LOAD_OPTIONS)
+        .order_by(case((models.Item.is_critical, 0), else_=1), models.Item.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 @router.patch("/{trip_id}/categories/{category_id}", response_model=schemas.CategoryResponse)
 def update_categories_for_trip(
@@ -268,16 +302,9 @@ def delete_category(
 def delete_trip(
     trip_id: int, 
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    trip: models.Trip = Depends(get_owned_trip)
 ):
-    trip_db = db.get(models.Trip, trip_id)
-    if trip_db is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-    
-    if trip_db.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Тільки організатор може видалити цю поїздку")
-    
-    db.delete(trip_db)
+    db.delete(trip)
     db.commit()
     
     return {"message": "Поїздку успішно видалено"}

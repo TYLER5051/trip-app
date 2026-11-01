@@ -4,6 +4,7 @@ from typing import List, Optional
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=30)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=100)
@@ -14,6 +15,7 @@ class UserResponse(UserBase):
 
 class CategoryBase(BaseModel):
     name: str = Field(min_length=2, max_length=50)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 class CategoryCreate(CategoryBase):
     pass
@@ -32,7 +34,8 @@ class ItemBase(BaseModel):
     quantity: int = Field(default=1, ge=1)
     note: Optional[str] = Field(default=None, max_length=200)
     is_critical: bool = False
-
+    model_config = ConfigDict(str_strip_whitespace=True)
+    
 class ItemCreate(ItemBase):
     trip_id: int
     category_id: int
@@ -43,6 +46,7 @@ class ItemUpdate(BaseModel):
     note: Optional[str] = Field(default=None, max_length=200)
     is_critical: Optional[bool] = None
     category_id: Optional[int] = Field(default=None, description="Нова категорія; null = не міняти")
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 class ItemResponse(ItemBase):
     id: int
@@ -50,22 +54,29 @@ class ItemResponse(ItemBase):
     category: Optional[CategoryResponse] = None
     assigned_users: List[UserResponse] = Field(default_factory=list)
     created_by: Optional[UserResponse] = None
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+
+class ItemListResponse(BaseModel):
+    items: List[ItemResponse]
+    total: int
+    limit: int
+    offset: int
 
 class TripBase(BaseModel):
     title: str = Field(min_length=3, max_length=100)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 class TripCreate(TripBase):
     pass
 
 class TripUpdate(TripBase):
     title: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-class TripResponse(TripBase):
+class TripDetailResponse(TripBase):
     id: int
     owner: UserResponse
     participants: List[UserResponse] = Field(default_factory=list)
-    items: List[ItemResponse] = Field(default_factory=list)
     total_items: int = 0
     packed_items: int = 0
     model_config = ConfigDict(from_attributes=True)

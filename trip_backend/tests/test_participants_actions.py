@@ -58,7 +58,8 @@ def test_leave_frees_assigned_items(client, auth_headers):
 
     trip_detail = client.get(f"/trips/{trip['id']}", headers=org).json()
     assert not any(u["username"] == "user_x" for u in trip_detail["participants"])
-    free_item = next(i for i in trip_detail["items"] if i["id"] == item["id"])
+    items_list = client.get(f"/trips/{trip['id']}/items/", headers=org).json()["items"]
+    free_item = next(i for i in items_list if i["id"] == item["id"])
     assert free_item["assigned_users"] == []
 
 
@@ -80,7 +81,8 @@ def test_remove_participant_frees_items(client, auth_headers):
 
     trip_detail = client.get(f"/trips/{trip['id']}", headers=org).json()
     assert not any(u["username"] == "user_y" for u in trip_detail["participants"])
-    free_item = next(i for i in trip_detail["items"] if i["id"] == item["id"])
+    items_list = client.get(f"/trips/{trip['id']}/items/", headers=org).json()["items"]
+    free_item = next(i for i in items_list if i["id"] == item["id"])
     assert free_item["assigned_users"] == []
 
 

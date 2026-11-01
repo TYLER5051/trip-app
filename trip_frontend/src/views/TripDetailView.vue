@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import api from '../services/api'
@@ -21,8 +21,74 @@ const accessError = ref(false)
 // Отримуємо поточного користувача для перевірки прав
 const currentUser = localStorage.getItem('username')
 
+// ---- Речі беремо з сервера: пошук + пагінація (GET /trips/:id/items/) ----
+const items = ref([])
+const itemsTotal = ref(0)
+const itemsOffset = ref(0)
+const itemsLimit = 50
+const isLoadingItems = ref(false)
+const isLoadingItemsMore = ref(false)
+const itemSearchInput = ref('')
+const itemQ = ref('')
 
-// Завантаження даних поїздки та категорій
+let itemSearchTimer = null
+let itemsSeq = 0
+
+watch(itemSearchInput, () => {
+  clearTimeout(itemSearchTimer)
+  itemSearchTimer = setTimeout(() => {
+    itemQ.value = itemSearchInput.value.trim()
+    fetchItems()
+  }, 300)
+})
+
+const buildItemsQuery = () => {
+  const params = new URLSearchParams()
+  params.set('limit', String(itemsLimit))
+  params.set('offset', String(itemsOffset.value))
+  if (itemQ.value) params.set('q', itemQ.value)
+  return params.toString()
+}
+
+// race-guard: якщо користувач швидко ввів новий пошук або натиснув "Ще",
+// відповідь старого запиту ігнорується.
+const fetchItems = async (reset = true) => {
+  const seq = ++itemsSeq
+  if (reset) {
+    itemsOffset.value = 0
+    items.value = []
+    isLoadingItems.value = true
+  } else {
+    isLoadingItemsMore.value = true
+  }
+
+  try {
+    const data = await api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+    if (seq !== itemsSeq) return
+    items.value = reset ? data.items : [...items.value, ...data.items]
+    itemsTotal.value = data.total
+  } catch (error) {
+    if (seq !== itemsSeq) return
+    if (error.status === 403 || error.status === 404) {
+      accessError.value = true
+    } else if (!reset) {
+      toast.error(error.message)
+    }
+  } finally {
+    if (seq !== itemsSeq) return
+    isLoadingItems.value = false
+    isLoadingItemsMore.value = false
+  }
+}
+
+const loadMoreItems = () => {
+  itemsOffset.value += itemsLimit
+  fetchItems(false)
+}
+
+const hasMoreItems = computed(() => items.value.length < itemsTotal.value)
+
+// Завантаження даних поїздки, категорій та речей
 const fetchTripData = async () => {
   try {
     const [tripData, catsData] = await Promise.all([
@@ -31,6 +97,7 @@ const fetchTripData = async () => {
     ])
     trip.value = tripData
     categories.value = catsData
+    await fetchItems()
   } catch (error) {
     if (error.status === 403 || error.status === 404) {
       accessError.value = true
@@ -44,8 +111,6 @@ const fetchTripData = async () => {
 
 // Групування речей за категоріями
 const groupedItems = computed(() => {
-  if (!trip.value || !trip.value.items) return {}
-
   const groups = {}
   // Спочатку кладемо всі категорії, щоб навіть порожні були видимі
   // (інакше порожню категорію неможливо було б видалити з інтерфейсу)
@@ -53,7 +118,7 @@ const groupedItems = computed(() => {
     groups[cat.name] = []
   })
 
-  trip.value.items.forEach(item => {
+  items.value.forEach(item => {
     const categoryObj = item.category || categories.value.find(c => c.id == item.category_id)
     const categoryName = categoryObj ? categoryObj.name : 'Інше'
 

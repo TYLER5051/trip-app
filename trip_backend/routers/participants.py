@@ -1,28 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import delete, func, select
 from database import get_db
-from deps import get_current_user, user_is_member
+from deps import get_current_user, user_is_member, get_owned_trip
+from rate_limit import limiter
 import models, schemas
 import secrets
-
 router = APIRouter(prefix="/trips")
 
 
 @router.get("/{trip_id}/invite", response_model=schemas.InviteTokenResponse)
 def get_invite_token(
     trip_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    trip: models.Trip = Depends(get_owned_trip)
 ):
-    trip = db.get(models.Trip, trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-    if trip.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Тільки організатор може отримати інвайт-токен")
-
     return {"invite_token": trip.invite_token}
 
 
@@ -30,14 +23,8 @@ def get_invite_token(
 def rotate_invite_token(
     trip_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    trip: models.Trip = Depends(get_owned_trip)
 ):
-    trip = db.get(models.Trip, trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-    if trip.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Тільки організатор може змінити інвайт-токен")
-
     trip.invite_token = secrets.token_urlsafe(32)
     trip.invite_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     db.commit()
@@ -75,8 +62,10 @@ def join_by_invite_token(
 
 
 @router.get("/invite/{token}/preview")
+@limiter.limit("60/minute")
 def preview_invite(
-    token: str, 
+    request: Request,
+    token: str,
     db: Session = Depends(get_db)
 ):
     trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
@@ -108,27 +97,15 @@ def remove_participant(
     trip_id: int,
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    trip: models.Trip = Depends(get_owned_trip)
 ):
-    trip_db = db.get(models.Trip, trip_id)
-    if trip_db is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
-
-    if trip_db.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Тільки організатор може видаляти учасників"
-        )
-
     user_to_remove = db.get(models.User, user_id)
-    if not user_to_remove or not user_is_member(db, trip_db, user_to_remove.id):
+    if not user_to_remove or not user_is_member(db, trip, user_to_remove.id):
         raise HTTPException(status_code=404, detail="Учасника не знайдено в цій поїздці")
 
-    # Членство та взяті речі учасника видаляємо bulk-запитами,
-    # без завантаження всіх items/assigned_users у пам'ять.
     db.execute(
         delete(models.trip_users).where(
-            models.trip_users.c.trip_id == trip_db.id,
+            models.trip_users.c.trip_id == trip.id,
             models.trip_users.c.user_id == user_to_remove.id,
         )
     )
@@ -136,7 +113,7 @@ def remove_participant(
         delete(models.item_assignments).where(
             models.item_assignments.c.user_id == user_to_remove.id,
             models.item_assignments.c.item_id.in_(
-                select(models.Item.id).where(models.Item.trip_id == trip_db.id)
+                select(models.Item.id).where(models.Item.trip_id == trip.id)
             ),
         )
     )

@@ -117,8 +117,8 @@ def test_delete_category_moves_items_to_other(client, auth_headers):
     assert r.status_code == 200
     assert "2" in r.json()["message"]  # у відповіді кажемо, скільки речей перенесено
 
-    trip = client.get(f"/trips/{trip_id}", headers=org).json()
-    moved = [i for i in trip["items"] if i["name"] in ("Намет", "Каремат")]
+    items = client.get(f"/trips/{trip_id}/items/", headers=org).json()["items"]
+    moved = [i for i in items if i["name"] in ("Намет", "Каремат")]
     assert len(moved) == 2                       # речі НЕ видаляються...
     assert all(i["category_id"] is None for i in moved)  # ...а переносяться в «Інше»
 

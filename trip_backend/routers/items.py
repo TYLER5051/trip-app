@@ -217,6 +217,6 @@ def delete_item(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status=400, detail="")
+        raise HTTPException(status_code=409, detail="Річ видаляється іншим користувачем, спробуйте ще раз")
     
     return {"message": f"Річ '{item.name}' видалена"}

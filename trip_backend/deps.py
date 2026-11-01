@@ -10,7 +10,10 @@ import models
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
     """Повертає авторизованого користувача або 401."""
     credentials_exception = HTTPException(
         status_code=401,
@@ -30,7 +33,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-def user_is_member(db: Session, trip, user_id: int) -> bool:
+def user_is_member(
+    db: Session, 
+    trip, 
+    user_id: int
+) -> bool:
     """Чи є user_id учасником trip — EXISTS по асоціативній таблиці,
     без завантаження всього списку participants у пам'ять."""
     return (
@@ -43,7 +50,11 @@ def user_is_member(db: Session, trip, user_id: int) -> bool:
         is not None
     )
 
-def get_accessible_trip(trip_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def get_accessible_trip(
+    trip_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
     trip = db.get(models.Trip, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
@@ -51,4 +62,16 @@ def get_accessible_trip(trip_id: int, db: Session = Depends(get_db), current_use
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
+    return trip
+
+def get_owned_trip(
+    trip_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+) -> models.Trip:
+    trip = db.get(models.Trip, trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+    if trip.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Тільки організатор має доступ")
     return trip

@@ -69,11 +69,11 @@ def test_duplicate_in_same_category_rejected(client, auth_headers):
     assert r.status_code == 400
 
 
-def test_different_case_or_extra_spaces_not_duplicate(client, auth_headers):
+def test_different_case_not_duplicate(client, auth_headers):
     trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
     create_item(client, u1, trip_id, cat1, "Спальник")
-    item = create_item(client, u2, trip_id, cat1, "  спальник ")
-    assert item["name"] == "  спальник "
+    item = create_item(client, u2, trip_id, cat1, "спальник")
+    assert item["name"] == "спальник"
 
 
 def test_same_name_in_other_category_is_also_rejected(client, auth_headers):
@@ -214,8 +214,8 @@ def test_assigned_users_in_response(client, auth_headers):
     item = create_item(client, org, trip_id, cat1, "Палатка")
     client.post(f"/items/{item['id']}/assign", headers=u1)
 
-    trip = client.get(f"/trips/{trip_id}", headers=org).json()
-    stored = next(i for i in trip["items"] if i["id"] == item["id"])
+    items = client.get(f"/trips/{trip_id}/items/", headers=org).json()["items"]
+    stored = next(i for i in items if i["id"] == item["id"])
     assert [a["username"] for a in stored["assigned_users"]] == ["p_one"]
 
 
@@ -270,7 +270,7 @@ def test_remove_participant_clears_assignments(client, auth_headers):
 
     assert client.delete(f"/trips/{trip_id}/participants/{u2_id}", headers=org).status_code == 200
 
-    trip = client.get(f"/trips/{trip_id}", headers=org).json()
-    stored = next(i for i in trip["items"] if i["id"] == item["id"])
+    items = client.get(f"/trips/{trip_id}/items/", headers=org).json()["items"]
+    stored = next(i for i in items if i["id"] == item["id"])
     assert stored["assigned_users"] == []
 
