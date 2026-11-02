@@ -211,9 +211,12 @@ def delete_item(
             detail="Важливу річ неможливо видалити. Спочатку зніміть мітку «Важлива» (це може зробити автор або організатор)."
         )
 
-    if trip.owner_id != current_user.id and item.created_by_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
-    
+    if trip.owner_id != current_user.id:
+        if not user_is_member(db, trip, current_user.id):
+            raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+        if item.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
     try:
         db.delete(item)
         db.commit()

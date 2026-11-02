@@ -117,7 +117,11 @@ def remove_participant(
             ),
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Дані змінилися, спробуйте ще раз")
 
     return {"message": "Учасника успішно видалено, а його речі звільнено"}
 
@@ -151,6 +155,10 @@ def leave_trip(
             ),
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Дані змінилися, спробуйте ще раз")
 
     return {"message": "Ви успішно вийшли з поїздки"}

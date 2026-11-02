@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
-from deps import get_current_user, get_accessible_trip, get_owned_trip
+from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member
 from rate_limit import limiter
 from typing import List, Optional
 import models, schemas
@@ -245,14 +245,14 @@ def update_categories_for_trip(
     if category is None:
         raise HTTPException(status_code=404, detail="Категорію не знайдено")
 
+    if trip.owner_id != current_user.id:
+        if not user_is_member(db, trip, current_user.id):
+            raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+        if category.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
-
-    if trip.owner_id != current_user.id and category.created_by_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Ви можете змінювати лише власні категорії (створені вами)"
-        )
 
     category_exist = db.query(models.Category).filter(
         models.Category.name == category_update.name,
@@ -286,14 +286,14 @@ def delete_category(
     if category is None:
         raise HTTPException(status_code=404, detail="Категорію не знайдено")
 
+    if trip.owner_id != current_user.id:
+        if not user_is_member(db, trip, current_user.id):
+            raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+        if category.created_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
-
-    if trip.owner_id != current_user.id and category.created_by_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Ви можете видаляти лише власні категорії (створені вами)"
-        )
 
     category_name = category.name
     items_moved = db.query(models.Item).filter(models.Item.category_id == category.id).count()
