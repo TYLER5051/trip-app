@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import delete, func, select
@@ -68,7 +68,12 @@ def preview_invite(
     token: str,
     db: Session = Depends(get_db)
 ):
-    trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
+    trip = (
+        db.query(models.Trip)
+        .options(selectinload(models.Trip.owner))
+        .filter(models.Trip.invite_token == token)
+        .first()
+    )
     if trip is None or (trip.invite_expires_at is not None and trip.invite_expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail="Інвайт-токен недійсний")
 

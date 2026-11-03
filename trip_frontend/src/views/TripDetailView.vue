@@ -18,8 +18,8 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const accessError = ref(false)
 
-// Отримуємо поточного користувача для перевірки прав
-const currentUser = localStorage.getItem('username')
+// Поточного користувача беремо з /users/me (реактивно), не з localStorage
+const currentUser = ref('')
 
 // ---- Речі беремо з сервера: пошук + пагінація (GET /trips/:id/items/) ----
 const items = ref([])
@@ -138,7 +138,7 @@ const groupedItems = computed(() => {
 
 const isParticipant = computed(() => {
   if (!trip.value || !trip.value.participants) return false
-  return trip.value.participants.some(p => p.username === currentUser)
+  return trip.value.participants.some(p => p.username === currentUser.value)
 })
 
 const packingPercent = computed(() => {
@@ -150,7 +150,7 @@ const packingPercent = computed(() => {
 // Видалення учасника (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
 const removeParticipant = async (participantId) => {
   const participant = trip.value?.participants?.find(p => p.id === participantId)
-  const freedCount = (trip.value?.items || []).filter(item =>
+  const freedCount = items.value.filter(item =>
     item.assigned_users && item.assigned_users.some(u => u.id === participantId)
   ).length
 
@@ -212,9 +212,7 @@ const renameCategory = async ({ id, name }) => {
 
 // Видалення категорії (тільки організатор або автор) — речі переносяться в "Інше"
 const deleteCategory = async (category) => {
-  const itemCount = trip.value.items
-    ? trip.value.items.filter(i => i.category_id === category.id).length
-    : 0
+  const itemCount = items.value.filter(i => i.category_id === category.id).length
 
   const message = itemCount > 0
     ? `Видалити категорію "${category.name}"? Речі (${itemCount}) буде перенесено до "Інше".`
@@ -252,7 +250,7 @@ const addItem = async (payload) => {
 
 // Взяття речі через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
 const toggleItemAssignment = async (item) => {
-  const assignedByMe = item.assigned_users && item.assigned_users.some(a => a.username === currentUser)
+  const assignedByMe = item.assigned_users && item.assigned_users.some(a => a.username === currentUser.value)
 
   try {
     if (assignedByMe) {
@@ -260,10 +258,20 @@ const toggleItemAssignment = async (item) => {
     } else {
       await api.post(`/items/${item.id}/assign`)
     }
-    await fetchTripData()
   } catch (error) {
     toast.error(error.message)
   }
+
+  // Оновлюємо статистику та поточну сторінку речей (не скидаємо пагінацію на 0).
+  // Навіть при помилці пере-завантажуємо список, щоб чекбокс повернувся
+  // до фактичного стану на сервері.
+  const [freshTrip, itemsData] = await Promise.all([
+    api.get(`/trips/${tripId}`),
+    api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+  ])
+  trip.value = freshTrip
+  items.value = itemsData.items
+  itemsTotal.value = itemsData.total
 }
 
 // Зміна кількості після створення (тільки автор або організатор)
@@ -355,8 +363,14 @@ const renameTrip = async (newTitle) => {
   }
 }
 
-onMounted(() => {
-  fetchTripData()
+onMounted(async () => {
+  try {
+    const me = await api.get('/users/me')
+    currentUser.value = me.username
+  } catch (e) {
+    // 401 — api сам перекидає на /login
+  }
+  await fetchTripData()
 })
 
 </script>

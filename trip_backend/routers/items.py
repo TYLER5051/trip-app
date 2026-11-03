@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user, user_is_member
@@ -52,8 +52,19 @@ def create_item(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
-    db.refresh(db_item)
-    return db_item
+
+    refreshed_item = (
+    db.query(models.Item)
+    .options(
+        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.created_by),
+        selectinload(models.Item.category),
+    )
+    .filter(models.Item.id == db_item.id)
+    .first()
+    )
+
+    return refreshed_item
 
 @router.patch("/{item_id}", response_model=schemas.ItemResponse)
 def update_item(
@@ -125,8 +136,19 @@ def update_item(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
-    db.refresh(item)
-    return item
+
+    refreshed_item = (
+    db.query(models.Item)
+    .options(
+        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.created_by),
+        selectinload(models.Item.category),
+    )
+    .filter(models.Item.id == item_id)
+    .first()
+    )
+
+    return refreshed_item
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
 def assign_item(
@@ -157,8 +179,18 @@ def assign_item(
         db.rollback()
         raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
     
-    db.refresh(item)
-    return item
+    refreshed_item = (
+    db.query(models.Item)
+    .options(
+        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.created_by),
+        selectinload(models.Item.category),
+    )
+    .filter(models.Item.id == item_id)
+    .first()
+    )
+
+    return refreshed_item
 
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
@@ -188,8 +220,18 @@ def unassign_item(
         db.rollback()
         raise HTTPException(status_code=400, detail="Ви не брали цю річ")
     
-    db.refresh(item)
-    return item
+    refreshed_item = (
+    db.query(models.Item)
+    .options(
+        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.created_by),
+        selectinload(models.Item.category),
+    )
+    .filter(models.Item.id == item_id)
+    .first()
+    )
+
+    return refreshed_item
 
 @router.delete("/{item_id}")
 def delete_item(
