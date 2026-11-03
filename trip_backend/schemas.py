@@ -97,3 +97,16 @@ class TripListResponse(BaseModel):
 
 class InviteTokenResponse(BaseModel):
     invite_token: str
+
+class UserMeResponse(BaseModel):
+    id: int
+    username: str
+    owned_trips_count: int
+    participating_trips_count: int
+    assigned_items_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=8, max_length=100)

@@ -39,7 +39,7 @@ const handleLogout = () => {
         <router-link v-if="!isLoggedIn" to="/login" class="nav-link">Увійти</router-link>
         
         <template v-else>
-          <span class="user-badge">👤 {{ username }}</span>
+          <router-link to="/profile" class="nav-link user-link">👤 {{ username }}</router-link>
           <button @click="handleLogout" class="logout-btn">Вийти</button>
         </template>
       </div>
@@ -77,9 +77,12 @@ body {
 .nav-link.router-link-active {
   color: #42b883;
 }
-.user-badge {
+.user-link {
   color: #bdc3c7;
   font-size: 14px;
+}
+.user-link.router-link-active {
+  color: #42b883;
 }
 .logout-btn {
   background-color: #e74c3c;

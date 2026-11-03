@@ -67,6 +67,7 @@ def get_trips(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     q: Optional[str] = Query(default=None, max_length=100),
+    role: Optional[str] = Query(default=None, pattern="^(owned|joined)$"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0)
 ):
@@ -77,6 +78,14 @@ def get_trips(
             models.Trip.participants.any(models.User.id == current_user.id),
         )
     )
+
+    if role == "owned":
+        base = base.filter(models.Trip.owner_id == current_user.id)
+    elif role == "joined":
+        base = base.filter(
+            models.Trip.owner_id != current_user.id,
+            models.Trip.participants.any(models.User.id == current_user.id),
+        )
 
     if query_text:
         escaped = query_text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
