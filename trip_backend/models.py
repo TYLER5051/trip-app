@@ -22,6 +22,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
+    token_version = Column(Integer, default=1, nullable=False)
 
     owned_trips = relationship("Trip", back_populates="owner")
     participating_trips = relationship("Trip", secondary=trip_users, back_populates="participants")
