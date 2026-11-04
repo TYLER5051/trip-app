@@ -121,3 +121,64 @@ def test_trips_role_filter(client, auth_headers):
     assert [t["id"] for t in res["items"]] == [guest_trip["id"]]
 
     assert client.get("/trips/", headers=org, params={"role": "admin"}).status_code == 422
+
+def _patch_me(client, headers, **payload):
+    return client.patch("/users/me", json=payload, headers=headers)
+
+
+def test_me_patch_requires_auth(client):
+    assert client.patch("/users/me", json={}).status_code == 401
+
+
+def test_me_change_username_issues_new_token(client, auth_headers):
+    headers = auth_headers("old_username")
+    r = _patch_me(client, headers, username="new_username")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["username"] == "new_username"
+    assert "access_token" in data
+
+    # Новий токен коректний. Старий також лишається валідним:
+    # sub=user.id не змінився, ver не інкрементувався — тому користувача
+    # зміна username НЕ «розлогінює» (це бажана поведінка).
+    new_headers = {"Authorization": f"Bearer {data['access_token']}"}
+    assert client.get("/users/me", headers=new_headers).status_code == 200
+    assert client.get("/users/me", headers=headers).status_code == 200
+
+    # Старий логін не працює, новий — працює.
+    assert client.post(
+        "/login", data={"username": "old_username", "password": "password123"}
+    ).status_code == 401
+    assert client.post(
+        "/login", data={"username": "new_username", "password": "password123"}
+    ).status_code == 200
+
+
+def test_me_change_username_conflict(client, auth_headers):
+    auth_headers("first")
+    headers = auth_headers("second")
+    r = _patch_me(client, headers, username="first")
+    assert r.status_code == 400
+
+
+def test_me_update_avatar_color(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, avatar_color="#42b883")
+    assert r.status_code == 200, r.text
+
+    me = get_me(client, headers)
+    assert me["avatar_color"] == "#42b883"
+
+
+def test_me_invalid_avatar_color_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, avatar_color="blue")
+    assert r.status_code == 422
+
+
+def test_me_empty_patch_is_noop(client, auth_headers):
+    headers = auth_headers("traveller")
+    assert _patch_me(client, headers).status_code == 200
+    me = get_me(client, headers)
+    assert me["username"] == "traveller"
+    assert me["avatar_color"] is None

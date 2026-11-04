@@ -13,6 +13,21 @@ class UserResponse(UserBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
+class UserMeResponse(BaseModel):
+    id: int
+    username: str
+    avatar_color: Optional[str] = None
+    owned_trips_count: int
+    participating_trips_count: int
+    assigned_items_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=3, max_length=30)
+    avatar_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    model_config = ConfigDict(str_strip_whitespace=True)
+
 class CategoryBase(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -97,15 +112,6 @@ class TripListResponse(BaseModel):
 
 class InviteTokenResponse(BaseModel):
     invite_token: str
-
-class UserMeResponse(BaseModel):
-    id: int
-    username: str
-    owned_trips_count: int
-    participating_trips_count: int
-    assigned_items_count: int
-
-    model_config = ConfigDict(from_attributes=True)
 
 class PasswordChangeRequest(BaseModel):
     old_password: str

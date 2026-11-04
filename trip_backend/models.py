@@ -23,6 +23,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     token_version = Column(Integer, default=1, nullable=False)
+    avatar_color = Column(String, default=None)
 
     owned_trips = relationship("Trip", back_populates="owner")
     participating_trips = relationship("Trip", secondary=trip_users, back_populates="participants")

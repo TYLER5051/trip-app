@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from database import get_db
 from deps import get_current_user
@@ -32,11 +33,36 @@ def get_user(
     return {
         "id": current_user.id,
         "username": current_user.username,
+        "avatar_color": current_user.avatar_color,
         "owned_trips_count": owned_trips_count or 0,
         "participating_trips_count": participating_trips_count or 0,
         "assigned_items_count": assigned_items_count or 0,
     }
 
+
+@router.patch("/me")
+@limiter.limit("10/minute")
+def change_profile(
+    request: Request,
+    update_user: schemas.UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    user = db.get(models.User, current_user.id)
+    if update_user.username is not None and update_user.username != user.username:
+        user.username = update_user.username
+    if update_user.avatar_color is not None:
+        user.avatar_color = update_user.avatar_color
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Користувач із таким ім'ям вже існує")
+    
+    access_token = auth.create_access_token(data={"sub": str(user.id), "ver": user.token_version})
+    return {"username": user.username, "avatar_color": user.avatar_color, "access_token": access_token, "token_type": "bearer"}
 
 @router.patch("/me/password")
 @limiter.limit("10/minute")
