@@ -30,6 +30,21 @@ def get_user(
         .scalar()
     )
 
+    packing_row = (
+        db.query(
+            func.count(func.distinct(models.Item.id)).label("total_items"),
+            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
+        )
+        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(
+            models.Item.trip.has(
+                (models.Trip.owner_id == current_user.id)
+                | models.Trip.participants.any(models.User.id == current_user.id)
+            )
+        )
+        .one()
+    )
+
     return {
         "id": current_user.id,
         "username": current_user.username,
@@ -37,6 +52,8 @@ def get_user(
         "owned_trips_count": owned_trips_count or 0,
         "participating_trips_count": participating_trips_count or 0,
         "assigned_items_count": assigned_items_count or 0,
+        "total_items_count": packing_row.total_items or 0,
+        "packed_items_count": packing_row.packed_items or 0
     }
 
 

@@ -39,6 +39,8 @@ def test_me_returns_username_and_zero_counts(client, auth_headers):
     assert data["owned_trips_count"] == 0
     assert data["participating_trips_count"] == 0
     assert data["assigned_items_count"] == 0
+    assert data["total_items_count"] == 0
+    assert data["packed_items_count"] == 0
 
 
 def test_me_counts_owned_and_participating(client, auth_headers):
@@ -128,6 +130,67 @@ def _patch_me(client, headers, **payload):
 
 def test_me_patch_requires_auth(client):
     assert client.patch("/users/me", json={}).status_code == 401
+
+
+def _add_category_item(client, headers, trip_id, name, assign_headers=None):
+    # Категорія «Спорядження» унікальна в межах поїздки (trip_id, name);
+    # перевикористовуємо наявну, щоб можна було додати кілька речей в одну поїздку.
+    cats = client.get(f"/trips/{trip_id}/categories/", headers=headers).json()
+    cat = next((c for c in cats if c["name"] == "Спорядження"), None)
+    if cat is None:
+        r = client.post(
+            f"/trips/{trip_id}/categories/", json={"name": "Спорядження"}, headers=headers
+        )
+        assert r.status_code == 200, r.text
+        cat = r.json()
+    item = client.post(
+        "/items/",
+        json={"name": name, "trip_id": trip_id, "category_id": cat["id"]},
+        headers=headers,
+    )
+    assert item.status_code == 200, item.text
+    if assign_headers is not None:
+        r = client.post(f"/items/{item.json()['id']}/assign", headers=assign_headers)
+        assert r.status_code == 200, r.text
+    return item.json()
+
+
+def test_me_packing_stats_aggregate(client, auth_headers):
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+    helper = auth_headers("helper")
+
+    owned = create_trip(client, org, "Власна")
+    guest_trip = create_trip(client, guest, "Гостьова")
+    join_by_invite(client, guest, org, guest_trip["id"])
+    join_by_invite(client, guest, helper, guest_trip["id"])
+
+    # Власна поїздка: 2 речі — одна взята оргом, одна вільна.
+    _add_category_item(client, org, owned["id"], "Палатка")
+    _add_category_item(client, org, owned["id"], "Плитка", assign_headers=org)
+
+    # Гостьова поїздка: 1 річ, взята іншим учасником (helper).
+    _add_category_item(client, guest, guest_trip["id"], "Каремат", assign_headers=helper)
+
+    data = get_me(client, org)
+    # total = всі речі в поїздках (власні + приєднані).
+    assert data["total_items_count"] == 3
+    # packed = речі з БУДЬ-ЯКИМ призначенням (навіть чужим).
+    assert data["packed_items_count"] == 2
+    # призначені саме оргу — окрема метрика.
+    assert data["assigned_items_count"] == 1
+
+
+def test_me_packing_stats_excludes_foreign_trips(client, auth_headers):
+    org = auth_headers("org")
+    foreign = auth_headers("foreign")
+    foreign_trip = create_trip(client, foreign, "Чужа мені")
+    _add_category_item(client, foreign, foreign_trip["id"], "Своя річ", assign_headers=foreign)
+
+    data = get_me(client, org)
+    assert data["total_items_count"] == 0
+    assert data["packed_items_count"] == 0
+    assert data["assigned_items_count"] == 0
 
 
 def test_me_change_username_issues_new_token(client, auth_headers):

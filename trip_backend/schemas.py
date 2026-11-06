@@ -20,6 +20,8 @@ class UserMeResponse(BaseModel):
     owned_trips_count: int
     participating_trips_count: int
     assigned_items_count: int
+    total_items_count: int
+    packed_items_count: int
 
     model_config = ConfigDict(from_attributes=True)
 
