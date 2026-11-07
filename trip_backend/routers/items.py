@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
@@ -195,9 +196,10 @@ def assign_item(
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
 def unassign_item(
-    item_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: models.User = Depends(get_current_user)  
+    item_id: int,
+    user_id: Optional[int] = Query(default=None, description="ID користувача, у якого організатор знімає річ"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
@@ -210,15 +212,24 @@ def unassign_item(
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
-    if current_user not in item.assigned_users:
+    if user_id is not None:
+        if trip.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Тільки організатор може знімати позначки інших учасників")
+        target_user = db.get(models.User, user_id)
+        if target_user is None or target_user not in item.assigned_users:
+            raise HTTPException(status_code=400, detail="Цей користувач не брав цю річ")
+    else:
+        target_user = current_user
+
+    if target_user not in item.assigned_users:
         raise HTTPException(status_code=400, detail="Ви не брали цю річ")
 
     try:
-        item.assigned_users.remove(current_user)
+        item.assigned_users.remove(target_user)
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Ви не брали цю річ")
+        raise HTTPException(status_code=400, detail="Не вдалося зняти позначку. Спробуйте ще раз")
     
     refreshed_item = (
     db.query(models.Item)

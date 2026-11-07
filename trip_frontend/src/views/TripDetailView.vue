@@ -248,7 +248,7 @@ const addItem = async (payload) => {
   }
 }
 
-// Взяття речі через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
+// Взяти річ через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
 const toggleItemAssignment = async (item) => {
   const assignedByMe = item.assigned_users && item.assigned_users.some(a => a.username === currentUser.value)
 
@@ -265,6 +265,25 @@ const toggleItemAssignment = async (item) => {
   // Оновлюємо статистику та поточну сторінку речей (не скидаємо пагінацію на 0).
   // Навіть при помилці пере-завантажуємо список, щоб чекбокс повернувся
   // до фактичного стану на сервері.
+  const [freshTrip, itemsData] = await Promise.all([
+    api.get(`/trips/${tripId}`),
+    api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+  ])
+  trip.value = freshTrip
+  items.value = itemsData.items
+  itemsTotal.value = itemsData.total
+}
+
+// Зняти річ, яку взяв інший учасник, — доступно тільки організатору поїздки
+const unassignOther = async ({ item, user }) => {
+  try {
+    await api.delete(`/items/${item.id}/assign?user_id=${user.id}`)
+    toast.success(`Позначку ${user.username} знято. Річ знову вільна.`)
+  } catch (error) {
+    toast.error(error.message)
+    return
+  }
+
   const [freshTrip, itemsData] = await Promise.all([
     api.get(`/trips/${tripId}`),
     api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
@@ -428,6 +447,7 @@ onMounted(async () => {
         :currentUser="currentUser"
         :ownerUsername="trip.owner?.username"
         @toggle="toggleItemAssignment"
+        @unassign-other="unassignOther"
         @delete="deleteItem"
         @rename="renameItem"
         @update-quantity="updateItemQuantity"
