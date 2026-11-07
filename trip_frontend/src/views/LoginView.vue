@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import api from '../services/api'
+import auth from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,7 +18,7 @@ const loadTripPreview = async () => {
 
   try {
     previewTrip.value = await api.get(`/trips/invite/${match[1]}/preview`)
-  } catch (error) {
+  } catch {
     previewTrip.value = null
   }
 }
@@ -71,8 +72,7 @@ const submitForm = async () => {
       // логін
       const data = await api.login(username.value.trim(), password.value)
 
-      localStorage.setItem('access_token', data.access_token)
-      localStorage.setItem('username', username.value.trim())
+      auth.setSession(data.access_token, username.value.trim())
 
       router.push(redirectTo)
     }

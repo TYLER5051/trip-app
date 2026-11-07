@@ -26,8 +26,9 @@ class UserMeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = Field(default=None, min_length=3, max_length=30)
+    username: Optional[str] = Field(default=None, min_length=3, max_length=30, pattern=r"^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$")
     avatar_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    current_password: Optional[str] = Field(default=None)
     model_config = ConfigDict(str_strip_whitespace=True)
 
 class CategoryBase(BaseModel):

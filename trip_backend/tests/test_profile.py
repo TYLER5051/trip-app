@@ -9,6 +9,14 @@
 """
 
 
+import auth
+from jose import jwt
+
+
+def _user_id(client, headers):
+    return client.get("/users/me", headers=headers).json()["id"]
+
+
 def create_trip(client, headers, title="Похід"):
     r = client.post("/trips/", json={"title": title}, headers=headers)
     assert r.status_code == 200, r.text
@@ -195,13 +203,19 @@ def test_me_packing_stats_excludes_foreign_trips(client, auth_headers):
 
 def test_me_change_username_issues_new_token(client, auth_headers):
     headers = auth_headers("old_username")
-    r = _patch_me(client, headers, username="new_username")
+    r = _patch_me(client, headers, username="new_username", current_password="password123")
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["username"] == "new_username"
     assert "access_token" in data
 
-    # Новий токен коректний. Старий також лишається валідним:
+    # Новий токен коректний і містить оновлений username та збережений token_version.
+    payload = jwt.decode(data["access_token"], auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+    assert payload["sub"] == str(_user_id(client, headers))
+    assert payload["ver"] == 1
+    assert payload["username"] == "new_username"
+
+    # Новий токен працює. Старий також лишається валідним:
     # sub=user.id не змінився, ver не інкрементувався — тому користувача
     # зміна username НЕ «розлогінює» (це бажана поведінка).
     new_headers = {"Authorization": f"Bearer {data['access_token']}"}
@@ -217,11 +231,49 @@ def test_me_change_username_issues_new_token(client, auth_headers):
     ).status_code == 200
 
 
+def test_me_change_username_cyrillic_ok(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="Олександр", current_password="password123")
+    assert r.status_code == 200, r.text
+    assert get_me(client, headers)["username"] == "Олександр"
+
+
+def test_me_change_username_requires_current_password(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="new_username")
+    assert r.status_code == 400
+    assert "поточний пароль" in r.json()["detail"]
+
+
+def test_me_change_username_wrong_current_password(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="new_username", current_password="wrong-pass")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Невірний поточний пароль"
+
+
+def test_me_change_username_too_short_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="ab", current_password="password123")
+    assert r.status_code == 422
+
+
+def test_me_change_username_invalid_chars_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    # Пробіл усередині заборонений.
+    assert _patch_me(client, headers, username="new user", current_password="password123").status_code == 422
+    # Символ @ заборонений.
+    assert _patch_me(client, headers, username="nov@y", current_password="password123").status_code == 422
+    # Дефіс та підкреслення — дозволені.
+    assert _patch_me(client, headers, username="new_-login", current_password="password123").status_code == 200
+
+
 def test_me_change_username_conflict(client, auth_headers):
     auth_headers("first")
     headers = auth_headers("second")
-    r = _patch_me(client, headers, username="first")
+    r = _patch_me(client, headers, username="first", current_password="password123")
     assert r.status_code == 400
+    assert r.json()["detail"] == "Користувач із таким ім'ям вже існує"
 
 
 def test_me_update_avatar_color(client, auth_headers):

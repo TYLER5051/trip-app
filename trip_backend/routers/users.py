@@ -67,6 +67,10 @@ def change_profile(
 ):
     user = db.get(models.User, current_user.id)
     if update_user.username is not None and update_user.username != user.username:
+        if not update_user.current_password:
+            raise HTTPException(status_code=400, detail="Введіть поточний пароль")
+        if not auth.verify_password(update_user.current_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Невірний поточний пароль")
         user.username = update_user.username
     if update_user.avatar_color is not None:
         user.avatar_color = update_user.avatar_color
@@ -78,7 +82,9 @@ def change_profile(
         db.rollback()
         raise HTTPException(status_code=400, detail="Користувач із таким ім'ям вже існує")
     
-    access_token = auth.create_access_token(data={"sub": str(user.id), "ver": user.token_version})
+    access_token = auth.create_access_token(
+        data={"sub": str(user.id), "ver": user.token_version, "username": user.username}
+    )
     return {"username": user.username, "avatar_color": user.avatar_color, "access_token": access_token, "token_type": "bearer"}
 
 @router.patch("/me/password")

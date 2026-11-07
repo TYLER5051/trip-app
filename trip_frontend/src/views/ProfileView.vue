@@ -1,7 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '../services/api'
+import auth from '../stores/auth'
 import TripCard from '../components/TripCard.vue'
+
+// Той самий формат, що й на бекенді: латинські/кириличні літери, цифри, дефіс, підкреслення.
+const USERNAME_REGEX = /^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$/
 
 const profile = ref(null)
 const profileError = ref('')
@@ -19,6 +23,24 @@ const isLoadingMore = ref(false)
 const errorMessage = ref('')
 const limit = 20
 const offset = ref(0)
+
+const newUsername = ref('')
+const currentUsernamePassword = ref('')
+const isChangingUsername = ref(false)
+const usernameError = ref('')
+const usernamePasswordError = ref('')
+const usernameSuccess = ref('')
+
+// Валідація на льоту — кнопка залишається вимкненою, поки логін не змінився,
+// закороткий, містить недопустимі символи або не вказано поточний пароль.
+const isUsernameSubmitDisabled = computed(() => {
+  const name = newUsername.value.trim()
+  if (isChangingUsername.value) return true
+  if (name.length < 3) return true
+  if (!USERNAME_REGEX.test(name)) return true
+  if (name === profile.value?.username) return true
+  return !currentUsernamePassword.value
+})
 
 const oldPassword = ref('')
 const newPassword = ref('')
@@ -85,6 +107,39 @@ const switchTab = (key) => {
 const loadMore = () => {
   offset.value += limit
   fetchTrips(false)
+}
+
+const changeUsername = async () => {
+  usernameError.value = ''
+  usernamePasswordError.value = ''
+  usernameSuccess.value = ''
+
+  isChangingUsername.value = true
+  try {
+    const data = await api.patch('/users/me', {
+      username: newUsername.value.trim(),
+      current_password: currentUsernamePassword.value
+    })
+    // Бекенд видає новий токен після зміни username. Оновлюємо реактивний
+    // стан автентифікації (auth store) — хедер та аватар оновлюються миттєво
+    // без location.reload(). localStorage оновлюється всередині auth.setSession.
+    auth.setSession(data.access_token, data.username)
+    usernameSuccess.value = 'Логін успішно змінено'
+    newUsername.value = ''
+    currentUsernamePassword.value = ''
+    await fetchProfile()
+  } catch (error) {
+    if (error.status === 400 && String(error.message).toLowerCase().includes('пароль')) {
+      // «Введіть поточний пароль» або «Невірний поточний пароль» — під полем пароля.
+      usernamePasswordError.value = error.message
+    } else if (error.status === 400 && String(error.message).toLowerCase().includes('існує')) {
+      usernameError.value = 'Цей логін вже зайнятий'
+    } else {
+      usernameError.value = error.message
+    }
+  } finally {
+    isChangingUsername.value = false
+  }
 }
 
 const changePassword = async () => {
@@ -163,6 +218,50 @@ onMounted(() => {
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: packedPercent + '%' }"></div>
         </div>
+      </div>
+
+      <div class="password-card">
+        <h3>Зміна логіна</h3>
+        <form @submit.prevent="changeUsername" class="password-form">
+          <div class="form-group">
+            <label>Новий логін</label>
+            <input
+              type="text"
+              v-model="newUsername"
+              placeholder="Мінімум 3 символи, без пробілів"
+              minlength="3"
+              maxlength="30"
+            />
+
+            <div v-if="usernameError" class="error-message">{{ usernameError }}</div>
+            <div v-if="newUsername.trim() && !USERNAME_REGEX.test(newUsername.trim())" class="error-message">
+              Лише літери, цифри, дефіс та підкреслення
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Поточний пароль</label>
+            <input
+              type="password"
+              v-model="currentUsernamePassword"
+              placeholder="Для підтвердження зміни"
+            />
+
+            <div v-if="usernamePasswordError" class="error-message">{{ usernamePasswordError }}</div>
+          </div>
+
+          <div class="form-group">
+            <div v-if="usernameSuccess" class="success-message">{{ usernameSuccess }}</div>
+          </div>
+
+          <div v-if="!isUsernameSubmitDisabled" class="form-hint">
+            Новий логін одразу відображатиметься у ваших поїздках та призначених речах.
+          </div>
+
+          <button type="submit" :disabled="isUsernameSubmitDisabled" class="password-btn">
+            {{ isChangingUsername ? 'Зберігаємо...' : 'Змінити логін' }}
+          </button>
+        </form>
       </div>
 
       <div class="password-card">
@@ -385,6 +484,11 @@ onMounted(() => {
 .success-message {
   color: #27ae60;
   font-size: 14px;
+}
+.form-hint {
+  color: #7f8c8d;
+  font-size: 13px;
+  line-height: 1.4;
 }
 .tabs {
   display: flex;

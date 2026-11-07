@@ -1,10 +1,11 @@
+import auth from '../stores/auth'
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Коли бекенд відповідає 401 — токен протух або невалідний.
-// Чистимо localStorage і повертаємо користувача на сторінку логіну.
+// Чистимо сесію (localStorage + реактивний стан) і повертаємо користувача на логін.
 function handleUnauthorized() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('username')
+  auth.clearSession()
   if (!window.location.pathname.startsWith('/login')) {
     window.location.href = '/login'
   }
@@ -36,8 +37,7 @@ async function request(endpoint, { method = 'GET', body, headers = {}, form = fa
     if (isPublic) {
       // Публічний ендпоінт (логін) — 401 означає «невірний логін або пароль»,
       // а не протухлу сесію. Чистимо старий токен, але НЕ редиректимо.
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('username')
+      auth.clearSession()
       throw new Error(data?.detail || 'Невірний логін або пароль')
     }
 
