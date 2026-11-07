@@ -19,18 +19,21 @@ _ITEM_LOAD_OPTIONS = (
 )
 
 def _stats_for_trip(db: Session, trip_id: int):
-    """Підраховує total_items/packed_items одним агрегованим запитом —
-    без завантаження всього списку речей у пам'ять."""
-    row = (
-        db.query(
-            func.count(func.distinct(models.Item.id)).label("total_items"),
-            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
-        )
-        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+    """Підраховує total_items/packed_items кількома простими запитами
+    total = сума quantity (одиниць), packed = кількість взятих одиниць (записів item_assignments)."""
+    total_items = (
+        db.query(func.sum(models.Item.quantity))
         .filter(models.Item.trip_id == trip_id)
-        .one()
+        .scalar() or 0
     )
-    return row.total_items, row.packed_items
+    packed_items = (
+        db.query(func.count(models.item_assignments.c.item_id))
+        .select_from(models.Item)
+        .join(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(models.Item.trip_id == trip_id)
+        .scalar()
+    )
+    return total_items, packed_items or 0
 
 @router.post("/", response_model=schemas.TripDetailResponse)
 def create_trip(
@@ -107,13 +110,23 @@ def get_trips(
     )
 
     trip_ids = [t.id for t in trips]
-    stats_rows = (
+
+    total_rows = (
         db.query(
             models.Item.trip_id,
-            func.count(func.distinct(models.Item.id)).label("total_items"),
-            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
+            func.coalesce(func.sum(models.Item.quantity), 0).label("total_items"),
         )
-        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(models.Item.trip_id.in_(trip_ids))
+        .group_by(models.Item.trip_id)
+        .all()
+    )
+
+    packed_rows = (
+        db.query(
+            models.Item.trip_id,
+            func.count(models.item_assignments.c.item_id).label("packed_items"),
+        )
+        .join(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
         .filter(models.Item.trip_id.in_(trip_ids))
         .group_by(models.Item.trip_id)
         .all()
@@ -128,13 +141,13 @@ def get_trips(
         .all()
     )
 
-    stats = {row.trip_id: row for row in stats_rows}
+    total_map = {trip_id: total for trip_id, total in total_rows}
+    packed_map = {trip_id: packed for trip_id, packed in packed_rows}
     participant_counts = {trip_id: count for trip_id, count in participant_rows}
 
     for trip in trips:
-        row = stats.get(trip.id)
-        trip.total_items = row.total_items if row else 0
-        trip.packed_items = row.packed_items if row else 0
+        trip.total_items = total_map.get(trip.id, 0)
+        trip.packed_items = packed_map.get(trip.id, 0)
         trip.participants_count = participant_counts.get(trip.id, 0)
 
     return {"items": trips, "total": total, "limit": limit, "offset": offset}

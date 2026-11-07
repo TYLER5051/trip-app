@@ -3,7 +3,7 @@
 
 Правила бізнес-логіки:
   - перейменовувати/видаляти річ може ТІЛЬКИ її автор (created_by) або організатор поїздки;
-  - «взяти» (assign) може будь-який учасник, але взяття НЕ дає права редагувати/видаляти;
+  - «взяти» (assign) може будь-який учасник, але це не дає права редагувати/видаляти;
   - важливу річ (is_critical) не може видалити НІХТО, доки автор або організатор не зніме мітку.
 """
 
@@ -44,6 +44,10 @@ def assign(client, headers, item_id):
 
 def unassign(client, headers, item_id):
     return client.delete(f"/items/{item_id}/assign", headers=headers)
+
+
+def unassign_user(client, headers, item_id, user_id):
+    return client.delete(f"/items/{item_id}/assign?user_id={user_id}", headers=headers)
 
 
 def test_response_contains_creator(client, auth_headers):
@@ -128,7 +132,7 @@ def test_take_and_unpack_flow(client, auth_headers):
     # кількість вичерпана (quantity=1) — інший учасник взяти не може
     assert assign(client, u2, item["id"]).status_code == 400
 
-    # той, хто взяв, знімає СВОЄ «взяття»
+    # той, хто взяв, знімає свою позначку
     assert unassign(client, u1, item["id"]).status_code == 200
 
 
@@ -138,3 +142,36 @@ def test_outsider_cannot_rename(client, auth_headers):
 
     outsider = auth_headers("outsider")
     assert rename(client, outsider, item["id"], "Хак").status_code == 403
+
+
+def test_organizer_can_unassign_participant_take(client, auth_headers):
+    trip_id, cat_id, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat_id, "Намет")
+
+    assert assign(client, u1, item["id"]).status_code == 200
+    u1_id = client.get("/users/me", headers=u1).json()["id"]
+
+    # організатор знімає річ із іншого учасника через user_id
+    r = unassign_user(client, org, item["id"], u1_id)
+    assert r.status_code == 200
+    assert r.json()["assigned_users"] == []
+
+
+def test_regular_participant_cannot_unassign_other_take(client, auth_headers):
+    trip_id, cat_id, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat_id, "Намет")
+
+    assert assign(client, u1, item["id"]).status_code == 200
+    u1_id = client.get("/users/me", headers=u1).json()["id"]
+
+    # звичайний учасник НЕ може зняти річ із іншого учасника через user_id
+    assert unassign_user(client, u2, item["id"], u1_id).status_code == 403
+
+
+def test_organizer_unassign_not_taken_user_400(client, auth_headers):
+    trip_id, cat_id, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat_id, "Намет")
+
+    u1_id = client.get("/users/me", headers=u1).json()["id"]
+    # річ ніхто не брав — зняти нема чого
+    assert unassign_user(client, org, item["id"], u1_id).status_code == 400

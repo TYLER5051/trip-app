@@ -8,7 +8,7 @@ const props = defineProps({
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category'])
+const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other'])
 
 // Стан редагування назви речі
 const editingId = ref(null)
@@ -27,8 +27,14 @@ const canModifyItem = (item) => {
   return isOwner || isCreator
 }
 
+// Чи поточний користувач — організатор поїздки
+const isOwner = computed(() => !!props.ownerUsername && props.ownerUsername === props.currentUser)
+
 // Чи «взяв» річ поточний користувач (його чекбокс)
 const assignedByMe = (item) => item.assigned_users && item.assigned_users.some(a => a.username === props.currentUser)
+
+// Учасники, які взяли річ, КРІМ поточного користувача (кількість людей може бути будь-якою = quantity)
+const otherAssignees = (item) => item.assigned_users ? item.assigned_users.filter(a => a.username !== props.currentUser) : []
 
 // Всі місця (quantity) уже розібрані
 const itemFull = (item) => !!(item.assigned_users && item.assigned_users.length >= item.quantity)
@@ -244,12 +250,20 @@ const getCategoryProgress = (items = []) => {
             <!-- Ліва частина речі (чекбокс і ім'я) -->
             <div class="item-content">
               <label class="item-label">
+                <!-- Я взяв річ: чекбокс, щоб зняти -->
                 <input
+                  v-if="assignedByMe(item)"
                   type="checkbox"
-                  :checked="assignedByMe(item)"
+                  checked
                   @change="emit('toggle', item)"
-                  :disabled="!assignedByMe(item) && itemFull(item)"
-                  :title="!assignedByMe(item) && itemFull(item) ? 'Всі місця розібрані' : ''"
+                  title="Зняти свою позначку"
+                />
+                <!-- Вільне місце: чекбокс, щоб взяти річ -->
+                <input
+                  v-else-if="!itemFull(item)"
+                  type="checkbox"
+                  @change="emit('toggle', item)"
+                  title="Взяти річ"
                 />
                 <span class="item-info">
                   <span class="item-name" :class="{ assigned: assignedByMe(item) }">
@@ -267,11 +281,29 @@ const getCategoryProgress = (items = []) => {
                 <span v-else-if="item.is_critical" class="critical-badge" title="Важлива річ">⭐</span>
               </label>
 
+              <span
+                v-if="isOwner && otherAssignees(item).length"
+                class="owner-unassign"
+              >
+                <button
+                  v-for="a in otherAssignees(item)"
+                  :key="a.id"
+                  class="unassign-inline-btn"
+                  :title="`Зняти річ із ${a.username}`"
+                  @click="emit('unassign-other', { item, user: a })"
+                >Зняти: {{ a.username }}</button>
+              </span>
+
               <span v-if="item.created_by" class="creator-badge">
                 Автор: {{ item.created_by.username }}
               </span>
-              <span v-if="item.assigned_users && item.assigned_users.length" class="assignee-badge">
-                Бере: {{ item.assigned_users.map(a => a.username).join(', ') }}
+              <span
+                v-for="a in item.assigned_users"
+                :key="a.id"
+                class="assignee-badge"
+                :title="a.username === currentUser ? 'Ви взяли цю річ' : `Цю річ взяв ${a.username}`"
+              >
+                ✓ Взяв {{ a.username }}
               </span>
               <span v-if="item.quantity > 1" class="taken-count" :class="{ full: itemFull(item) }">
                 {{ item.assigned_users ? item.assigned_users.length : 0 }}/{{ item.quantity }}
@@ -527,6 +559,24 @@ const getCategoryProgress = (items = []) => {
   border-radius: 15px;
   font-size: 13px;
   font-weight: bold;
+}
+.owner-unassign {
+  display: inline-flex;
+  gap: 6px;
+}
+.unassign-inline-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.unassign-inline-btn:hover {
+  background-color: #c0392b;
 }
 .empty {
   text-align: center;
