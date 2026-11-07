@@ -104,6 +104,16 @@ def test_me_change_password(client, auth_headers):
         headers=headers,
     )
     assert r.status_code == 200
+    new_token = r.json()["access_token"]
+    assert new_token  # бекенд повертає свіжий токен (token_version інкрементовано)
+
+    # Інвалідація всіх старих сесій: старий токен більше не дійсний.
+    old_headers = {"Authorization": headers["Authorization"]}
+    assert client.get("/users/me", headers=old_headers).status_code == 401
+
+    # Новий токен із відповіді на зміну пароля — дійсний.
+    fresh_headers = {"Authorization": f"Bearer {new_token}"}
+    assert client.get("/users/me", headers=fresh_headers).status_code == 200
 
     # Старий пароль більше не працює, новий — працює.
     assert client.post(

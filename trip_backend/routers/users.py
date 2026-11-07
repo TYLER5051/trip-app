@@ -99,6 +99,12 @@ def change_password(
         raise HTTPException(status_code=400, detail="Неправильний пароль")
 
     current_user.hashed_password = auth.get_password_hash(pwd_request.new_password)
+    current_user.token_version += 1
+
+    access_token = auth.create_access_token(
+            data={"sub": str(current_user.id), "ver": current_user.token_version, "username": current_user.username}
+        )
+
     db.commit()
 
-    return {"message": "Пароль успішно змінено"}
+    return {"username": current_user.username, "access_token": access_token, "token_type": "bearer"}

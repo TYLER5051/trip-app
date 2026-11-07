@@ -182,10 +182,13 @@ const changePassword = async () => {
 
   isChangingPassword.value = true
   try {
-    await api.patch('/users/me/password', {
+    const data = await api.patch('/users/me/password', {
       old_password: oldPassword.value,
       new_password: newPassword.value
     })
+    // Бекенд при зміні пароля інвалідує всі старі токени (token_version += 1)
+    // і повертає новий access_token — зберігаємо його, щоб поточна сесія не вилетіла.
+    if (data.access_token) auth.setSession(data.access_token, data.username)
     passwordSuccess.value = 'Пароль успішно змінено'
     oldPassword.value = ''
     newPassword.value = ''
