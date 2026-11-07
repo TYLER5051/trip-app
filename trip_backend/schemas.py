@@ -11,6 +11,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    avatar_color: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class UserMeResponse(BaseModel):

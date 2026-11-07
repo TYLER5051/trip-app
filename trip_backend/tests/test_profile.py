@@ -297,3 +297,23 @@ def test_me_empty_patch_is_noop(client, auth_headers):
     me = get_me(client, headers)
     assert me["username"] == "traveller"
     assert me["avatar_color"] is None
+
+
+def test_avatar_color_exposed_in_trip_user_responses(client, auth_headers):
+    # Колір аватара потрапляє у відповіді, де користувач виступає
+    # як owner або participant (UserResponse), щоб фронтенд міг його рендерити.
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+
+    _patch_me(client, org, avatar_color="#e74c3c")
+    trip = create_trip(client, org, "Поїздка з кольором")
+    join_by_invite(client, org, guest, trip["id"])
+
+    trip = client.get(f"/trips/{trip['id']}", headers=org).json()
+    assert trip["owner"]["avatar_color"] == "#e74c3c"
+    assert "avatar_color" in trip["owner"]
+
+    guest_avatar = next(
+        p["avatar_color"] for p in trip["participants"] if p["username"] == "guest"
+    )
+    assert guest_avatar is None

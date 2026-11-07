@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../services/api'
 import auth from '../stores/auth'
 import TripCard from '../components/TripCard.vue'
+import UserAvatar from '../components/UserAvatar.vue'
+import { AVATAR_COLORS } from '../utils/avatar'
 
 // Той самий формат, що й на бекенді: латинські/кириличні літери, цифри, дефіс, підкреслення.
 const USERNAME_REGEX = /^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$/
@@ -49,7 +51,26 @@ const isChangingPassword = ref(false)
 const passwordError = ref('')
 const passwordSuccess = ref('')
 
-const avatarLetter = computed(() => (profile.value?.username?.[0] || '?').toUpperCase())
+const avatarColorError = ref('')
+const avatarColorSuccess = ref('')
+const isSavingAvatarColor = ref(false)
+
+const changeAvatarColor = async (color) => {
+  avatarColorError.value = ''
+  avatarColorSuccess.value = ''
+  if (profile.value?.avatar_color === color) return
+
+  isSavingAvatarColor.value = true
+  try {
+    await api.patch('/users/me', { avatar_color: color })
+    avatarColorSuccess.value = 'Колір аватара збережено'
+    await fetchProfile()
+  } catch (error) {
+    avatarColorError.value = error.message
+  } finally {
+    isSavingAvatarColor.value = false
+  }
+}
 
 const totalItems = computed(() => profile.value?.total_items_count ?? 0)
 const packedItems = computed(() => profile.value?.packed_items_count ?? 0)
@@ -188,11 +209,30 @@ onMounted(() => {
 
     <template v-else>
       <div class="profile-header">
-        <div class="avatar">{{ avatarLetter }}</div>
+        <UserAvatar :username="profile?.username" :color="profile?.avatar_color" :size="64" />
         <div class="profile-info">
           <h1>{{ profile?.username || 'Профіль' }}</h1>
           <p class="profile-subtitle">Твоя статистика подорожей</p>
         </div>
+      </div>
+
+      <div class="password-card">
+        <h3>Колір аватара</h3>
+        <div class="avatar-palette">
+          <button
+            v-for="color in AVATAR_COLORS"
+            :key="color"
+            class="color-swatch"
+            :class="{ active: profile?.avatar_color === color }"
+            :style="{ background: color }"
+            :title="color"
+            :aria-label="`Вибрати колір ${color}`"
+            @click="changeAvatarColor(color)"
+          ></button>
+        </div>
+        <div v-if="isSavingAvatarColor" class="palette-hint">Зберігаємо колір...</div>
+        <div v-if="avatarColorError" class="error-message">{{ avatarColorError }}</div>
+        <div v-if="avatarColorSuccess" class="success-message">{{ avatarColorSuccess }}</div>
       </div>
 
       <div class="stats-grid">
@@ -345,17 +385,28 @@ onMounted(() => {
   box-shadow: 0 2px 5px rgba(0,0,0,0.05);
   margin-bottom: 20px;
 }
-.avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: #42b883;
-  color: white;
-  font-size: 28px;
-  font-weight: bold;
+.avatar-palette {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.color-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  padding: 0;
+}
+.color-swatch:hover {
+  transform: scale(1.12);
+}
+.color-swatch.active {
+  border-color: #2c3e50;
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px #fff inset;
 }
 .profile-info h1 {
   margin: 0;
@@ -489,6 +540,11 @@ onMounted(() => {
   color: #7f8c8d;
   font-size: 13px;
   line-height: 1.4;
+}
+.palette-hint {
+  color: #7f8c8d;
+  font-size: 13px;
+  margin-top: 4px;
 }
 .tabs {
   display: flex;

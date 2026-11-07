@@ -1,5 +1,7 @@
 <script setup>
 
+import UserAvatar from '../components/UserAvatar.vue'
+
 defineProps({
   participants: { type: Array, required: true },
   ownerUsername: { type: String, required: false },
@@ -15,7 +17,12 @@ const emit = defineEmits(['remove'])
     <h3>👥 Учасники ({{ participants.length }})</h3>
     <ul class="participants-list">
       <li v-for="participant in participants" :key="participant.id">
-        <span>👤 {{ participant.username }}</span>
+        <UserAvatar
+          :username="participant.username"
+          :color="participant.avatar_color"
+          :size="24"
+        />
+        <span>{{ participant.username }}</span>
         
         <!-- Кнопка видалення учасника (Тільки для організатора) -->
         <button 
