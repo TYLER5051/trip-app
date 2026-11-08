@@ -81,13 +81,6 @@ const fetchItems = async (reset = true) => {
   }
 }
 
-const loadMoreItems = () => {
-  itemsOffset.value += itemsLimit
-  fetchItems(false)
-}
-
-const hasMoreItems = computed(() => items.value.length < itemsTotal.value)
-
 // Завантаження даних поїздки, категорій та речей
 const fetchTripData = async () => {
   try {
@@ -161,6 +154,21 @@ const removeParticipant = async (participantId) => {
     await api.delete(`/trips/${tripId}/participants/${participantId}`)
     await fetchTripData()
     toast.success(freedCount > 0 ? `Речі учасника звільнено: ${freedCount} шт.` : 'Учасника видалено.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
+// Передача прав організатора іншому учаснику (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
+const transferOwnership = async (participantId) => {
+  const participant = trip.value?.participants?.find(p => p.id === participantId)
+  const who = participant ? `«${participant.username}»` : `ID ${participantId}`
+  if (!confirm(`Передати права організатора учаснику ${who}? Ви станете звичайним учасником.`)) return
+
+  try {
+    await api.patch(`/trips/${tripId}/transfer-owner`, { new_owner_id: participantId })
+    await fetchTripData()
+    toast.success(`Права організатора передано ${who}`)
   } catch (error) {
     toast.error(error.message)
   }
@@ -386,7 +394,7 @@ onMounted(async () => {
   try {
     const me = await api.get('/users/me')
     currentUser.value = me.username
-  } catch (e) {
+  } catch {
     // 401 — api сам перекидає на /login
   }
   await fetchTripData()
@@ -431,6 +439,7 @@ onMounted(async () => {
         :ownerUsername="trip.owner?.username"
         :currentUser="currentUser"
         @remove="removeParticipant"
+        @transfer="transferOwnership"
       />
       
       <!-- додавання речей-->

@@ -120,3 +120,6 @@ class InviteTokenResponse(BaseModel):
 class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=100)
+
+class TransferOwnerRequest(BaseModel):
+    new_owner_id: int

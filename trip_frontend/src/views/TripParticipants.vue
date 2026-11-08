@@ -9,7 +9,7 @@ defineProps({
 })
 
 
-const emit = defineEmits(['remove'])
+const emit = defineEmits(['remove', 'transfer'])
 </script>
 
 <template>
@@ -24,6 +24,15 @@ const emit = defineEmits(['remove'])
         />
         <span>{{ participant.username }}</span>
         
+        <!-- Передача прав організатора (Тільки для організатора) -->
+        <button 
+          v-if="ownerUsername === currentUser"
+          @click="emit('transfer', participant.id)"
+          class="transfer-participant-btn"
+          title="Передати права організатора"
+        >
+          👑
+        </button>
         <!-- Кнопка видалення учасника (Тільки для організатора) -->
         <button 
           v-if="ownerUsername === currentUser"
@@ -69,6 +78,17 @@ const emit = defineEmits(['remove'])
   display: flex; 
   align-items: center; 
   gap: 8px; 
+}
+.transfer-participant-btn {
+  background: none; 
+  border: none; 
+  cursor: pointer; 
+  font-size: 12px; 
+  opacity: 0.6; 
+  padding: 0;
+}
+.transfer-participant-btn:hover { 
+  opacity: 1; 
 }
 .remove-participant-btn { 
   background: none; 
