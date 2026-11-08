@@ -1,5 +1,6 @@
 <script setup>
 import { ref, nextTick, computed } from 'vue'
+import UserAvatar from '../components/UserAvatar.vue'
 
 const props = defineProps({
   groupedItems: { type: Object, required: true },
@@ -295,6 +296,11 @@ const getCategoryProgress = (items = []) => {
               </span>
 
               <span v-if="item.created_by" class="creator-badge">
+                <UserAvatar
+                  :username="item.created_by.username"
+                  :color="item.created_by.avatar_color"
+                  :size="18"
+                />
                 Автор: {{ item.created_by.username }}
               </span>
               <span
@@ -303,6 +309,7 @@ const getCategoryProgress = (items = []) => {
                 class="assignee-badge"
                 :title="a.username === currentUser ? 'Ви взяли цю річ' : `Цю річ взяв ${a.username}`"
               >
+                <UserAvatar :username="a.username" :color="a.avatar_color" :size="18" />
                 ✓ Взяв {{ a.username }}
               </span>
               <span v-if="item.quantity > 1" class="taken-count" :class="{ full: itemFull(item) }">
@@ -551,6 +558,9 @@ const getCategoryProgress = (items = []) => {
   border-radius: 15px;
   font-size: 13px;
   font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .creator-badge {
   background-color: #fdf2e3;
@@ -559,6 +569,9 @@ const getCategoryProgress = (items = []) => {
   border-radius: 15px;
   font-size: 13px;
   font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .owner-unassign {
   display: inline-flex;

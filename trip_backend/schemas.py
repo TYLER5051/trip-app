@@ -11,7 +11,26 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    avatar_color: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
+
+class UserMeResponse(BaseModel):
+    id: int
+    username: str
+    avatar_color: Optional[str] = None
+    owned_trips_count: int
+    participating_trips_count: int
+    assigned_items_count: int
+    total_items_count: int
+    packed_items_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=3, max_length=30, pattern=r"^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$")
+    avatar_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    current_password: Optional[str] = Field(default=None)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 class CategoryBase(BaseModel):
     name: str = Field(min_length=2, max_length=50)
@@ -95,18 +114,36 @@ class TripListResponse(BaseModel):
     limit: int
     offset: int 
 
+class TripShortResponse(BaseModel):
+    id: int
+    title: str
+    model_config = ConfigDict(from_attributes=True)
+
+class AssignedItemResponse(BaseModel):
+    id: int
+    name: str
+    quantity: int
+    note: Optional[str] = None
+    is_critical: bool = False
+    trip: TripShortResponse
+    category: Optional[CategoryResponse] = None
+    assigned_users: List[UserResponse] = Field(default_factory=list)
+    model_config = ConfigDict(from_attributes=True)
+
+class AssignedItemsListResponse(BaseModel):
+    items: List[AssignedItemResponse]
+    total: int
+    model_config = ConfigDict(from_attributes=True)
+
 class InviteTokenResponse(BaseModel):
     invite_token: str
-
-class UserMeResponse(BaseModel):
-    id: int
-    username: str
-    owned_trips_count: int
-    participating_trips_count: int
-    assigned_items_count: int
-
-    model_config = ConfigDict(from_attributes=True)
 
 class PasswordChangeRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=100)
+
+class TransferOwnerRequest(BaseModel):
+    new_owner_id: int
+
+class DeleteAccountRequest(BaseModel):
+    current_password: str

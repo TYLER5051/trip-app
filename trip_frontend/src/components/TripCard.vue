@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import UserAvatar from './UserAvatar.vue'
 
 const props = defineProps({
   trip: { type: Object, required: true }
@@ -17,7 +18,14 @@ const packingPercent = computed(() => {
     <div class="trip-card">
       <h2>{{ trip.title }}</h2>
       <p class="owner" v-if="trip.owner">
-        Організатор: <strong>{{ trip.owner.username }}</strong>
+        <span class="owner-inline">
+          <UserAvatar
+            :username="trip.owner.username"
+            :color="trip.owner.avatar_color"
+            :size="22"
+          />
+          Організатор: <strong>{{ trip.owner.username }}</strong>
+        </span>
       </p>
       <p class="participants">
         Учасників: {{ trip.participants_count ?? 0 }}
@@ -57,6 +65,11 @@ const packingPercent = computed(() => {
   color: #7f8c8d;
   font-size: 14px;
   margin: 5px 0;
+}
+.owner-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .participants {
   color: #7f8c8d;

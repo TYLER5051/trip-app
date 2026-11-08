@@ -69,6 +69,12 @@ const hasMore = computed(() => trips.value.length < total.value)
 const createTrip = async () => {
   if (!newTripTitle.value.trim()) return
 
+  // Ввід менше ніж 3 символи (напр. через Enter у формі) — не слати запит, а пояснити.
+  if (newTripTitle.value.trim().length < 3) {
+    createError.value = 'Назва поїздки має містити щонайменше 3 символи'
+    return
+  }
+
   isCreating.value = true
   createError.value = ''
 
@@ -82,6 +88,15 @@ const createTrip = async () => {
     isCreating.value = false
   }
 }
+
+// Клієнтська перевірка: не даємо відправляти явно закоротку назву (бекенд вимагає >= 3).
+const canCreateTrip = computed(() => newTripTitle.value.trim().length >= 3 && !isCreating.value)
+
+// Підказка під час вводу: щось введено, але менше ніж 3 символи.
+const titleTooShort = computed(() => {
+  const len = newTripTitle.value.trim().length
+  return len > 0 && len < 3
+})
 
 onMounted(() => {
   fetchTrips()
@@ -106,10 +121,13 @@ onMounted(() => {
           placeholder="Назва поїздки" 
           required
         />
-        <button type="submit" :disabled="isCreating">
+        <button type="submit" :disabled="!canCreateTrip">
           {{ isCreating ? 'Створення...' : 'Створити' }}
         </button>
       </form>
+      <div v-if="titleTooShort" class="error-message hint-message">
+        Назва поїздки має містити щонайменше 3 символи
+      </div>
       <div v-if="createError" class="error-message">{{ createError }}</div>
     </div>
 
@@ -238,8 +256,16 @@ h1 {
   font-weight: bold;
   cursor: pointer;
 }
-.create-form button:hover {
+.create-form button:hover:not(:disabled) {
   background-color: #35495e;
+}
+.create-form button:disabled {
+  background-color: #98a6ad;
+  cursor: default;
+}
+.hint-message {
+  margin-top: 6px;
+  font-size: 13px;
 }
 .error-message {
   color: #e74c3c;

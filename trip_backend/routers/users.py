@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from database import get_db
 from deps import get_current_user
@@ -29,14 +30,81 @@ def get_user(
         .scalar()
     )
 
+    packing_row = (
+        db.query(
+            func.count(func.distinct(models.Item.id)).label("total_items"),
+            func.count(func.distinct(models.item_assignments.c.item_id)).label("packed_items"),
+        )
+        .outerjoin(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
+        .filter(
+            models.Item.trip.has(
+                (models.Trip.owner_id == current_user.id)
+                | models.Trip.participants.any(models.User.id == current_user.id)
+            )
+        )
+        .one()
+    )
+
     return {
         "id": current_user.id,
         "username": current_user.username,
+        "avatar_color": current_user.avatar_color,
         "owned_trips_count": owned_trips_count or 0,
         "participating_trips_count": participating_trips_count or 0,
         "assigned_items_count": assigned_items_count or 0,
+        "total_items_count": packing_row.total_items or 0,
+        "packed_items_count": packing_row.packed_items or 0
     }
 
+@router.get("/me/assigned-items", response_model=schemas.AssignedItemsListResponse)
+def get_assigned_items(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    items = (
+        db.query(models.Item)
+        .options(
+            selectinload(models.Item.trip),
+            selectinload(models.Item.category),
+            selectinload(models.Item.assigned_users),
+        )
+        .join(models.item_assignments, models.Item.id == models.item_assignments.c.item_id)
+        .filter(models.item_assignments.c.user_id == current_user.id)
+        .order_by(models.Item.trip_id, models.Item.id)
+        .all()
+    )
+
+    return {"items": items, "total": len(items)}
+
+@router.patch("/me")
+@limiter.limit("10/minute")
+def change_profile(
+    request: Request,
+    update_user: schemas.UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    user = db.get(models.User, current_user.id)
+    if update_user.username is not None and update_user.username != user.username:
+        if not update_user.current_password:
+            raise HTTPException(status_code=400, detail="Введіть поточний пароль")
+        if not auth.verify_password(update_user.current_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Невірний поточний пароль")
+        user.username = update_user.username
+    if update_user.avatar_color is not None:
+        user.avatar_color = update_user.avatar_color
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Користувач із таким ім'ям вже існує")
+    
+    access_token = auth.create_access_token(
+        data={"sub": str(user.id), "ver": user.token_version, "username": user.username}
+    )
+    return {"username": user.username, "avatar_color": user.avatar_color, "access_token": access_token, "token_type": "bearer"}
 
 @router.patch("/me/password")
 @limiter.limit("10/minute")
@@ -50,6 +118,33 @@ def change_password(
         raise HTTPException(status_code=400, detail="Неправильний пароль")
 
     current_user.hashed_password = auth.get_password_hash(pwd_request.new_password)
+    current_user.token_version += 1
+
+    access_token = auth.create_access_token(
+            data={"sub": str(current_user.id), "ver": current_user.token_version, "username": current_user.username}
+        )
+
     db.commit()
 
-    return {"message": "Пароль успішно змінено"}
+    return {"username": current_user.username, "access_token": access_token, "token_type": "bearer"}
+
+@router.delete("/me")
+def delete_account(
+    delete_request: schemas.DeleteAccountRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    if not auth.verify_password(delete_request.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Неправильний пароль")
+
+    db.query(models.Item).filter(models.Item.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+    db.query(models.Category).filter(models.Category.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+
+    trips = db.query(models.Trip).filter(models.Trip.owner_id == current_user.id).all()
+    for trip in trips:
+        db.delete(trip)
+
+    db.delete(current_user)
+    db.commit()
+
+    return {"message": "Акаунт успішно видалено"}

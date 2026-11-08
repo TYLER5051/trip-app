@@ -9,6 +9,14 @@
 """
 
 
+import auth
+from jose import jwt
+
+
+def _user_id(client, headers):
+    return client.get("/users/me", headers=headers).json()["id"]
+
+
 def create_trip(client, headers, title="Похід"):
     r = client.post("/trips/", json={"title": title}, headers=headers)
     assert r.status_code == 200, r.text
@@ -39,6 +47,8 @@ def test_me_returns_username_and_zero_counts(client, auth_headers):
     assert data["owned_trips_count"] == 0
     assert data["participating_trips_count"] == 0
     assert data["assigned_items_count"] == 0
+    assert data["total_items_count"] == 0
+    assert data["packed_items_count"] == 0
 
 
 def test_me_counts_owned_and_participating(client, auth_headers):
@@ -94,6 +104,16 @@ def test_me_change_password(client, auth_headers):
         headers=headers,
     )
     assert r.status_code == 200
+    new_token = r.json()["access_token"]
+    assert new_token  # бекенд повертає свіжий токен (token_version інкрементовано)
+
+    # Інвалідація всіх старих сесій: старий токен більше не дійсний.
+    old_headers = {"Authorization": headers["Authorization"]}
+    assert client.get("/users/me", headers=old_headers).status_code == 401
+
+    # Новий токен із відповіді на зміну пароля — дійсний.
+    fresh_headers = {"Authorization": f"Bearer {new_token}"}
+    assert client.get("/users/me", headers=fresh_headers).status_code == 200
 
     # Старий пароль більше не працює, новий — працює.
     assert client.post(
@@ -121,3 +141,243 @@ def test_trips_role_filter(client, auth_headers):
     assert [t["id"] for t in res["items"]] == [guest_trip["id"]]
 
     assert client.get("/trips/", headers=org, params={"role": "admin"}).status_code == 422
+
+def _patch_me(client, headers, **payload):
+    return client.patch("/users/me", json=payload, headers=headers)
+
+
+def test_me_patch_requires_auth(client):
+    assert client.patch("/users/me", json={}).status_code == 401
+
+
+def _add_category_item(client, headers, trip_id, name, assign_headers=None):
+    # Категорія «Спорядження» унікальна в межах поїздки (trip_id, name);
+    # перевикористовуємо наявну, щоб можна було додати кілька речей в одну поїздку.
+    cats = client.get(f"/trips/{trip_id}/categories/", headers=headers).json()
+    cat = next((c for c in cats if c["name"] == "Спорядження"), None)
+    if cat is None:
+        r = client.post(
+            f"/trips/{trip_id}/categories/", json={"name": "Спорядження"}, headers=headers
+        )
+        assert r.status_code == 200, r.text
+        cat = r.json()
+    item = client.post(
+        "/items/",
+        json={"name": name, "trip_id": trip_id, "category_id": cat["id"]},
+        headers=headers,
+    )
+    assert item.status_code == 200, item.text
+    if assign_headers is not None:
+        r = client.post(f"/items/{item.json()['id']}/assign", headers=assign_headers)
+        assert r.status_code == 200, r.text
+    return item.json()
+
+
+def test_me_packing_stats_aggregate(client, auth_headers):
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+    helper = auth_headers("helper")
+
+    owned = create_trip(client, org, "Власна")
+    guest_trip = create_trip(client, guest, "Гостьова")
+    join_by_invite(client, guest, org, guest_trip["id"])
+    join_by_invite(client, guest, helper, guest_trip["id"])
+
+    # Власна поїздка: 2 речі — одна взята оргом, одна вільна.
+    _add_category_item(client, org, owned["id"], "Палатка")
+    _add_category_item(client, org, owned["id"], "Плитка", assign_headers=org)
+
+    # Гостьова поїздка: 1 річ, взята іншим учасником (helper).
+    _add_category_item(client, guest, guest_trip["id"], "Каремат", assign_headers=helper)
+
+    data = get_me(client, org)
+    # total = всі речі в поїздках (власні + приєднані).
+    assert data["total_items_count"] == 3
+    # packed = речі з БУДЬ-ЯКИМ призначенням (навіть чужим).
+    assert data["packed_items_count"] == 2
+    # призначені саме оргу — окрема метрика.
+    assert data["assigned_items_count"] == 1
+
+
+def get_assigned_items(client, headers):
+    r = client.get("/users/me/assigned-items", headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_assigned_items_requires_auth(client):
+    assert client.get("/users/me/assigned-items").status_code == 401
+
+
+def test_assigned_items_empty_for_new_user(client, auth_headers):
+    headers = auth_headers("traveller")
+    assert get_assigned_items(client, headers) == {"items": [], "total": 0}
+
+
+def test_assigned_items_aggregates_across_trips(client, auth_headers):
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+
+    own = create_trip(client, org, "Власна поїздка")
+    guest_trip = create_trip(client, guest, "Чужа поїздка")
+    join_by_invite(client, guest, org, guest_trip["id"])
+
+    own_item = _add_category_item(client, org, own["id"], "Палатка", assign_headers=org)
+    guest_item = _add_category_item(client, guest, guest_trip["id"], "Каремат", assign_headers=org)
+
+    # Річ, узята іншим учасником, і вільна річ у мій список не потрапляють.
+    _add_category_item(client, guest, guest_trip["id"], "Плитка", assign_headers=guest)
+    _add_category_item(client, org, own["id"], "Спальник")
+
+    data = get_assigned_items(client, org)
+    assert data["total"] == 2
+    assert {i["id"] for i in data["items"]} == {own_item["id"], guest_item["id"]}
+
+    by_id = {i["id"]: i for i in data["items"]}
+    assert by_id[own_item["id"]]["trip"] == {"id": own["id"], "title": "Власна поїздка"}
+    assert by_id[guest_item["id"]]["trip"]["id"] == guest_trip["id"]
+    assert by_id[own_item["id"]]["category"]["name"] == "Спорядження"
+    assert "org" in [u["username"] for u in by_id[own_item["id"]]["assigned_users"]]
+    assert by_id[own_item["id"]]["quantity"] == 1
+
+
+def test_assigned_items_removed_after_unassign(client, auth_headers):
+    org = auth_headers("org")
+    trip = create_trip(client, org)
+    item = _add_category_item(client, org, trip["id"], "Палатка", assign_headers=org)
+
+    assert get_assigned_items(client, org)["total"] == 1
+
+    r = client.delete(f"/items/{item['id']}/assign", headers=org)
+    assert r.status_code == 200, r.text
+    assert get_assigned_items(client, org) == {"items": [], "total": 0}
+
+
+def test_me_packing_stats_excludes_foreign_trips(client, auth_headers):
+    org = auth_headers("org")
+    foreign = auth_headers("foreign")
+    foreign_trip = create_trip(client, foreign, "Чужа мені")
+    _add_category_item(client, foreign, foreign_trip["id"], "Своя річ", assign_headers=foreign)
+
+    data = get_me(client, org)
+    assert data["total_items_count"] == 0
+    assert data["packed_items_count"] == 0
+    assert data["assigned_items_count"] == 0
+
+
+def test_me_change_username_issues_new_token(client, auth_headers):
+    headers = auth_headers("old_username")
+    r = _patch_me(client, headers, username="new_username", current_password="password123")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["username"] == "new_username"
+    assert "access_token" in data
+
+    # Новий токен коректний і містить оновлений username та збережений token_version.
+    payload = jwt.decode(data["access_token"], auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
+    assert payload["sub"] == str(_user_id(client, headers))
+    assert payload["ver"] == 1
+    assert payload["username"] == "new_username"
+
+    # Новий токен працює. Старий також лишається валідним:
+    # sub=user.id не змінився, ver не інкрементувався — тому користувача
+    # зміна username НЕ «розлогінює» (це бажана поведінка).
+    new_headers = {"Authorization": f"Bearer {data['access_token']}"}
+    assert client.get("/users/me", headers=new_headers).status_code == 200
+    assert client.get("/users/me", headers=headers).status_code == 200
+
+    # Старий логін не працює, новий — працює.
+    assert client.post(
+        "/login", data={"username": "old_username", "password": "password123"}
+    ).status_code == 401
+    assert client.post(
+        "/login", data={"username": "new_username", "password": "password123"}
+    ).status_code == 200
+
+
+def test_me_change_username_cyrillic_ok(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="Олександр", current_password="password123")
+    assert r.status_code == 200, r.text
+    assert get_me(client, headers)["username"] == "Олександр"
+
+
+def test_me_change_username_requires_current_password(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="new_username")
+    assert r.status_code == 400
+    assert "поточний пароль" in r.json()["detail"]
+
+
+def test_me_change_username_wrong_current_password(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="new_username", current_password="wrong-pass")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Невірний поточний пароль"
+
+
+def test_me_change_username_too_short_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, username="ab", current_password="password123")
+    assert r.status_code == 422
+
+
+def test_me_change_username_invalid_chars_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    # Пробіл усередині заборонений.
+    assert _patch_me(client, headers, username="new user", current_password="password123").status_code == 422
+    # Символ @ заборонений.
+    assert _patch_me(client, headers, username="nov@y", current_password="password123").status_code == 422
+    # Дефіс та підкреслення — дозволені.
+    assert _patch_me(client, headers, username="new_-login", current_password="password123").status_code == 200
+
+
+def test_me_change_username_conflict(client, auth_headers):
+    auth_headers("first")
+    headers = auth_headers("second")
+    r = _patch_me(client, headers, username="first", current_password="password123")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Користувач із таким ім'ям вже існує"
+
+
+def test_me_update_avatar_color(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, avatar_color="#42b883")
+    assert r.status_code == 200, r.text
+
+    me = get_me(client, headers)
+    assert me["avatar_color"] == "#42b883"
+
+
+def test_me_invalid_avatar_color_rejected(client, auth_headers):
+    headers = auth_headers("traveller")
+    r = _patch_me(client, headers, avatar_color="blue")
+    assert r.status_code == 422
+
+
+def test_me_empty_patch_is_noop(client, auth_headers):
+    headers = auth_headers("traveller")
+    assert _patch_me(client, headers).status_code == 200
+    me = get_me(client, headers)
+    assert me["username"] == "traveller"
+    assert me["avatar_color"] is None
+
+
+def test_avatar_color_exposed_in_trip_user_responses(client, auth_headers):
+    # Колір аватара потрапляє у відповіді, де користувач виступає
+    # як owner або participant (UserResponse), щоб фронтенд міг його рендерити.
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+
+    _patch_me(client, org, avatar_color="#e74c3c")
+    trip = create_trip(client, org, "Поїздка з кольором")
+    join_by_invite(client, org, guest, trip["id"])
+
+    trip = client.get(f"/trips/{trip['id']}", headers=org).json()
+    assert trip["owner"]["avatar_color"] == "#e74c3c"
+    assert "avatar_color" in trip["owner"]
+
+    guest_avatar = next(
+        p["avatar_color"] for p in trip["participants"] if p["username"] == "guest"
+    )
+    assert guest_avatar is None

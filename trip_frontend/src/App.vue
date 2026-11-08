@@ -1,27 +1,19 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import auth from './stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 
-// Створюємо реактивні змінні
-const isLoggedIn = ref(!!localStorage.getItem('access_token'))
-const username = ref(localStorage.getItem('username') || 'Користувач')
-
-// Слідкуємо за зміною URL. Щойно користувач переходить на іншу сторінку (наприклад, після логіну), 
-// ми примусово оновлюємо дані з localStorage.
+// Хедер читає реактивний стан з auth store. Слідкуємо за зміною URL і
+// синхронізуємо його з localStorage (на випадок змін поза стори).
 watch(() => route.path, () => {
-  isLoggedIn.value = !!localStorage.getItem('access_token')
-  username.value = localStorage.getItem('username') || 'Користувач'
+  auth.syncFromStorage()
 })
 
 const handleLogout = () => {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('username')
-  // Оновлюємо стан одразу при натисканні "Вийти"
-  isLoggedIn.value = false
-  username.value = 'Користувач'
+  auth.clearSession()
   router.push('/login')
 }
 </script>
@@ -30,16 +22,16 @@ const handleLogout = () => {
   <div id="app">
     <nav class="navbar">
       <div class="nav-left">
-        <router-link v-if="isLoggedIn" to="/" class="nav-link">
+        <router-link v-if="auth.isLoggedIn" to="/" class="nav-link">
           Поїздки
         </router-link>
       </div>
       
       <div class="nav-right">
-        <router-link v-if="!isLoggedIn" to="/login" class="nav-link">Увійти</router-link>
+        <router-link v-if="!auth.isLoggedIn" to="/login" class="nav-link">Увійти</router-link>
         
         <template v-else>
-          <router-link to="/profile" class="nav-link user-link">👤 {{ username }}</router-link>
+          <router-link to="/profile" class="nav-link user-link">👤 {{ auth.username }}</router-link>
           <button @click="handleLogout" class="logout-btn">Вийти</button>
         </template>
       </div>

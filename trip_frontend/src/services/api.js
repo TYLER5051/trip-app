@@ -1,13 +1,76 @@
+import auth from '../stores/auth'
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Коли бекенд відповідає 401 — токен протух або невалідний.
-// Чистимо localStorage і повертаємо користувача на сторінку логіну.
+// Чистимо сесію (localStorage + реактивний стан) і повертаємо користувача на логін.
 function handleUnauthorized() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('username')
+  auth.clearSession()
   if (!window.location.pathname.startsWith('/login')) {
     window.location.href = '/login'
   }
+}
+
+const FIELD_LABELS = {
+  title: 'Назва поїздки',
+  name: 'Назва',
+  username: 'Логін',
+  password: 'Пароль',
+  old_password: 'Поточний пароль',
+  new_password: 'Новий пароль',
+  current_password: 'Поточний пароль',
+  quantity: 'Кількість',
+  note: 'Примітка',
+  trip_id: 'Поїздка',
+  category_id: 'Категорія',
+}
+
+// Якщо поля немає в словнику — беремо останній сегмент loc і робимо першу літеру великою.
+function fieldLabel(loc) {
+  const raw = Array.isArray(loc) ? loc[loc.length - 1] : loc
+  if (FIELD_LABELS[raw]) return FIELD_LABELS[raw]
+  const s = String(raw)
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'поле'
+}
+
+// Перетворює один обʼєкт помилки валідації Pydantic v2 у зрозумілий український текст.
+function validationMessage(err) {
+  const field = fieldLabel(err && err.loc)
+  const ctx = (err && err.ctx) || {}
+  switch (err && err.type) {
+    case 'missing':
+      return `Поле «${field}» обов'язкове`
+    case 'string_too_short':
+      return `«${field}» має містити щонайменше ${ctx.min_length} символів`
+    case 'string_too_long':
+      return `«${field}» має містити не більше ніж ${ctx.max_length} символів`
+    case 'string_pattern_mismatch':
+      return `«${field}» містить недопустимі символи`
+    case 'int_type':
+    case 'int_parsing':
+      return `«${field}» має бути цілим числом`
+    case 'greater_than_equal':
+      return `«${field}» має бути не менше ${ctx.ge}`
+    case 'less_than_equal':
+      return `«${field}» має бути не більше ${ctx.le}`
+    default:
+      return err && err.msg ? `«${field}»: ${err.msg}` : `Помилка валідації поля «${field}»`
+  }
+}
+
+function formatApiError(status, data) {
+  const detail = data && data.detail
+
+  if (typeof detail === 'string' && detail) return detail
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    if (status === 422) {
+      return detail.slice(0, 2).map(validationMessage).join(', ')
+    }
+    return detail.map(e => (e && e.msg) || '').filter(Boolean).join(', ')
+  }
+
+  return 'Щось пішло не так'
 }
 
 // Універсальна обгортка над fetch. Всі запити застосунку йдуть через неї:
@@ -36,8 +99,7 @@ async function request(endpoint, { method = 'GET', body, headers = {}, form = fa
     if (isPublic) {
       // Публічний ендпоінт (логін) — 401 означає «невірний логін або пароль»,
       // а не протухлу сесію. Чистимо старий токен, але НЕ редиректимо.
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('username')
+      auth.clearSession()
       throw new Error(data?.detail || 'Невірний логін або пароль')
     }
 
@@ -50,10 +112,7 @@ async function request(endpoint, { method = 'GET', body, headers = {}, form = fa
   const data = await res.json().catch(() => null)
 
   if (!res.ok) {
-    const detail = data && data.detail
-      ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
-      : 'Щось пішло не так'
-    const error = new Error(detail)
+    const error = new Error(formatApiError(res.status, data))
     error.status = res.status
     throw error
   }
@@ -65,7 +124,7 @@ export default {
   get: (endpoint) => request(endpoint),
   post: (endpoint, body) => request(endpoint, { method: 'POST', body }),
   patch: (endpoint, body) => request(endpoint, { method: 'PATCH', body }),
-  delete: (endpoint) => request(endpoint, { method: 'DELETE' }),
+  delete: (endpoint, body) => request(endpoint, { method: 'DELETE', body }),
   // /login приймає дані у форматі x-www-form-urlencoded (OAuth2), тому form: true.
   // public: true — щоб 401 тут означав «невірний пароль», а не «вийди з сесії».
   login: (username, password) => request('/login', {

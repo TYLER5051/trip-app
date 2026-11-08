@@ -293,6 +293,49 @@ def update_categories_for_trip(
     db.refresh(category)
     return category
 
+@router.patch("/{trip_id}/transfer-owner", response_model=schemas.TripDetailResponse)
+def transfer_owner(
+    trip_id: int,
+    transfer_request: schemas.TransferOwnerRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    trip = (
+            db.query(models.Trip)
+            .options(
+                selectinload(models.Trip.owner),
+                selectinload(models.Trip.participants)
+            )
+            .filter(models.Trip.id == trip_id)
+            .first()
+        )
+    if not trip:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    if current_user.id != trip.owner_id:
+        raise HTTPException(status_code=403, detail="Тільки організатор може передавати права")
+
+    if transfer_request.new_owner_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Ви вже є організатором")
+
+    user = db.get(models.User, transfer_request.new_owner_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Користувача не знайдено")
+
+    if user not in trip.participants:
+        raise HTTPException(status_code=400, detail="Користувач не є учасником цієї поїздки")
+
+    trip.owner_id = user.id
+    trip.participants.remove(user)
+
+    if current_user not in trip.participants:
+        trip.participants.append(current_user)
+
+    db.commit()
+    db.refresh(trip)
+
+    return trip
+    
 @router.delete("/{trip_id}/categories/{category_id}")
 def delete_category(
     trip_id: int,
