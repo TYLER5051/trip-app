@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../services/api'
 import auth from '../stores/auth'
 import TripCard from '../components/TripCard.vue'
 import UserAvatar from '../components/UserAvatar.vue'
 import { AVATAR_COLORS } from '../utils/avatar'
+
+const router = useRouter()
 
 // Той самий формат, що й на бекенді: латинські/кириличні літери, цифри, дефіс, підкреслення.
 const USERNAME_REGEX = /^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$/
@@ -200,6 +203,34 @@ const changePassword = async () => {
   }
 }
 
+const deletePassword = ref('')
+const isDeleting = ref(false)
+const deleteError = ref('')
+
+const deleteAccount = async () => {
+  deleteError.value = ''
+
+  if (!deletePassword.value) {
+    deleteError.value = 'Введіть поточний пароль для підтвердження'
+    return
+  }
+
+  if (!confirm(
+    'УВАГА! Це незворотна дія. Усі ваші поїздки, де ви організатор, і ваші дані будуть видалені. Продовжити?'
+  )) return
+
+  isDeleting.value = true
+  try {
+    await api.delete('/users/me', { current_password: deletePassword.value })
+    auth.clearSession()
+    router.push('/login')
+  } catch (error) {
+    deleteError.value = error.message
+  } finally {
+    isDeleting.value = false
+  }
+}
+
 onMounted(() => {
   fetchProfile()
   fetchTrips()
@@ -328,6 +359,27 @@ onMounted(() => {
 
           <button type="submit" :disabled="isChangingPassword" class="password-btn">
             {{ isChangingPassword ? 'Зберігаємо...' : 'Змінити пароль' }}
+          </button>
+        </form>
+      </div>
+
+      <div class="password-card danger-card">
+        <h3>Видалити акаунт</h3>
+        <p class="palette-hint">
+          Видалення незворотне: ваші поїздки, де ви організатор, і ваші дані будуть стерті.
+        </p>
+        <form @submit.prevent="deleteAccount" class="password-form">
+          <div class="form-group">
+            <label>Поточний пароль</label>
+            <input
+              type="password"
+              v-model="deletePassword"
+              placeholder="Для підтвердження видалення"
+            />
+            <div v-if="deleteError" class="error-message">{{ deleteError }}</div>
+          </div>
+          <button type="submit" :disabled="isDeleting || !deletePassword" class="password-btn danger-btn">
+            {{ isDeleting ? 'Видаляємо...' : 'Видалити акаунт' }}
           </button>
         </form>
       </div>
@@ -530,6 +582,19 @@ onMounted(() => {
 .password-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.danger-card {
+  border: 1px solid #f5c6cb;
+  border-left: 4px solid #e74c3c;
+}
+.danger-btn {
+  background-color: #e74c3c;
+}
+.danger-btn:hover {
+  background-color: #c0392b;
+}
+.danger-btn:disabled {
+  background-color: #98a6ad;
 }
 .error-message {
   color: #e74c3c;

@@ -124,7 +124,7 @@ export default {
   get: (endpoint) => request(endpoint),
   post: (endpoint, body) => request(endpoint, { method: 'POST', body }),
   patch: (endpoint, body) => request(endpoint, { method: 'PATCH', body }),
-  delete: (endpoint) => request(endpoint, { method: 'DELETE' }),
+  delete: (endpoint, body) => request(endpoint, { method: 'DELETE', body }),
   // /login приймає дані у форматі x-www-form-urlencoded (OAuth2), тому form: true.
   // public: true — щоб 401 тут означав «невірний пароль», а не «вийди з сесії».
   login: (username, password) => request('/login', {

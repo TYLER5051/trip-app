@@ -108,3 +108,24 @@ def change_password(
     db.commit()
 
     return {"username": current_user.username, "access_token": access_token, "token_type": "bearer"}
+
+@router.delete("/me")
+def delete_account(
+    delete_request: schemas.DeleteAccountRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    if not auth.verify_password(delete_request.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Неправильний пароль")
+
+    db.query(models.Item).filter(models.Item.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+    db.query(models.Category).filter(models.Category.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+
+    trips = db.query(models.Trip).filter(models.Trip.owner_id == current_user.id).all()
+    for trip in trips:
+        db.delete(trip)
+
+    db.delete(current_user)
+    db.commit()
+
+    return {"message": "Акаунт успішно видалено"}

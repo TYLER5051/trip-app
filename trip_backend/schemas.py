@@ -123,3 +123,6 @@ class PasswordChangeRequest(BaseModel):
 
 class TransferOwnerRequest(BaseModel):
     new_owner_id: int
+
+class DeleteAccountRequest(BaseModel):
+    current_password: str
