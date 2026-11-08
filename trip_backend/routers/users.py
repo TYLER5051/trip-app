@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from database import get_db
@@ -56,6 +56,25 @@ def get_user(
         "packed_items_count": packing_row.packed_items or 0
     }
 
+@router.get("/me/assigned-items", response_model=schemas.AssignedItemsListResponse)
+def get_assigned_items(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    items = (
+        db.query(models.Item)
+        .options(
+            selectinload(models.Item.trip),
+            selectinload(models.Item.category),
+            selectinload(models.Item.assigned_users),
+        )
+        .join(models.item_assignments, models.Item.id == models.item_assignments.c.item_id)
+        .filter(models.item_assignments.c.user_id == current_user.id)
+        .order_by(models.Item.trip_id, models.Item.id)
+        .all()
+    )
+
+    return {"items": items, "total": len(items)}
 
 @router.patch("/me")
 @limiter.limit("10/minute")

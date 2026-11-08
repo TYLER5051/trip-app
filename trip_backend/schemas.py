@@ -114,6 +114,27 @@ class TripListResponse(BaseModel):
     limit: int
     offset: int 
 
+class TripShortResponse(BaseModel):
+    id: int
+    title: str
+    model_config = ConfigDict(from_attributes=True)
+
+class AssignedItemResponse(BaseModel):
+    id: int
+    name: str
+    quantity: int
+    note: Optional[str] = None
+    is_critical: bool = False
+    trip: TripShortResponse
+    category: Optional[CategoryResponse] = None
+    assigned_users: List[UserResponse] = Field(default_factory=list)
+    model_config = ConfigDict(from_attributes=True)
+
+class AssignedItemsListResponse(BaseModel):
+    items: List[AssignedItemResponse]
+    total: int
+    model_config = ConfigDict(from_attributes=True)
+
 class InviteTokenResponse(BaseModel):
     invite_token: str
 

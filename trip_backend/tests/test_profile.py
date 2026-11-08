@@ -199,6 +199,60 @@ def test_me_packing_stats_aggregate(client, auth_headers):
     assert data["assigned_items_count"] == 1
 
 
+def get_assigned_items(client, headers):
+    r = client.get("/users/me/assigned-items", headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_assigned_items_requires_auth(client):
+    assert client.get("/users/me/assigned-items").status_code == 401
+
+
+def test_assigned_items_empty_for_new_user(client, auth_headers):
+    headers = auth_headers("traveller")
+    assert get_assigned_items(client, headers) == {"items": [], "total": 0}
+
+
+def test_assigned_items_aggregates_across_trips(client, auth_headers):
+    org = auth_headers("org")
+    guest = auth_headers("guest")
+
+    own = create_trip(client, org, "Власна поїздка")
+    guest_trip = create_trip(client, guest, "Чужа поїздка")
+    join_by_invite(client, guest, org, guest_trip["id"])
+
+    own_item = _add_category_item(client, org, own["id"], "Палатка", assign_headers=org)
+    guest_item = _add_category_item(client, guest, guest_trip["id"], "Каремат", assign_headers=org)
+
+    # Річ, узята іншим учасником, і вільна річ у мій список не потрапляють.
+    _add_category_item(client, guest, guest_trip["id"], "Плитка", assign_headers=guest)
+    _add_category_item(client, org, own["id"], "Спальник")
+
+    data = get_assigned_items(client, org)
+    assert data["total"] == 2
+    assert {i["id"] for i in data["items"]} == {own_item["id"], guest_item["id"]}
+
+    by_id = {i["id"]: i for i in data["items"]}
+    assert by_id[own_item["id"]]["trip"] == {"id": own["id"], "title": "Власна поїздка"}
+    assert by_id[guest_item["id"]]["trip"]["id"] == guest_trip["id"]
+    assert by_id[own_item["id"]]["category"]["name"] == "Спорядження"
+    assert "org" in [u["username"] for u in by_id[own_item["id"]]["assigned_users"]]
+    assert by_id[own_item["id"]]["quantity"] == 1
+
+
+def test_assigned_items_removed_after_unassign(client, auth_headers):
+    org = auth_headers("org")
+    trip = create_trip(client, org)
+    item = _add_category_item(client, org, trip["id"], "Палатка", assign_headers=org)
+
+    assert get_assigned_items(client, org)["total"] == 1
+
+    r = client.delete(f"/items/{item['id']}/assign", headers=org)
+    assert r.status_code == 200, r.text
+    assert get_assigned_items(client, org) == {"items": [], "total": 0}
+
+
 def test_me_packing_stats_excludes_foreign_trips(client, auth_headers):
     org = auth_headers("org")
     foreign = auth_headers("foreign")

@@ -91,6 +91,51 @@ const fetchProfile = async () => {
   }
 }
 
+const assignedItems = ref([])
+const isAssignedLoading = ref(true)
+const assignedItemsError = ref('')
+const isUnassigningId = ref(null)
+
+// Агрегація по поїздках: бекенд і так повертає речі порядком (trip_id, id),
+// тому достатньо розкласти в Map, не сортування.
+const groupedByTrip = computed(() => {
+  const groups = new Map()
+  for (const item of assignedItems.value) {
+    if (!groups.has(item.trip.id)) {
+      groups.set(item.trip.id, { id: item.trip.id, title: item.trip.title, items: [] })
+    }
+    groups.get(item.trip.id).items.push(item)
+  }
+  return [...groups.values()]
+})
+
+const fetchAssignedItems = async () => {
+  isAssignedLoading.value = true
+  assignedItemsError.value = ''
+  try {
+    const data = await api.get('/users/me/assigned-items')
+    assignedItems.value = data.items
+  } catch (error) {
+    assignedItemsError.value = error.message
+  } finally {
+    isAssignedLoading.value = false
+  }
+}
+
+// Чекбокс «зняти з себе»: DELETE без user_id знімає позначку саме з мене.
+const unassignItem = async (item) => {
+  isUnassigningId.value = item.id
+  try {
+    await api.delete(`/items/${item.id}/assign`)
+    assignedItems.value = assignedItems.value.filter(i => i.id !== item.id)
+    await fetchProfile()
+  } catch (error) {
+    assignedItemsError.value = error.message
+  } finally {
+    isUnassigningId.value = null
+  }
+}
+
 const buildQuery = () => {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -234,6 +279,7 @@ const deleteAccount = async () => {
 onMounted(() => {
   fetchProfile()
   fetchTrips()
+  fetchAssignedItems()
 })
 </script>
 
@@ -292,6 +338,42 @@ onMounted(() => {
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: packedPercent + '%' }"></div>
         </div>
+      </div>
+
+      <div class="assigned-card">
+        <div class="card-head">
+          <h3>Мої доручені речі</h3>
+          <span v-if="assignedItems.length" class="assigned-count">{{ assignedItems.length }}</span>
+        </div>
+
+        <div v-if="isAssignedLoading" class="loading small">Завантаження...</div>
+        <div v-else-if="assignedItemsError" class="error-message">{{ assignedItemsError }}</div>
+        <div v-else-if="assignedItems.length === 0" class="assigned-empty">
+          У тебе поки немає доручених речей.
+        </div>
+
+        <template v-else>
+          <div v-for="group in groupedByTrip" :key="group.id" class="assigned-group">
+            <router-link :to="`/trips/${group.id}`" class="assigned-trip-title">{{ group.title }}</router-link>
+            <ul class="assigned-list">
+              <li v-for="item in group.items" :key="item.id" class="assigned-item">
+                <label class="assigned-check" :title="`Зняти з себе «${item.name}»`">
+                  <input
+                    type="checkbox"
+                    :checked="true"
+                    :disabled="isUnassigningId === item.id"
+                    @change="unassignItem(item)"
+                  />
+                  <span class="assigned-item-name">{{ item.name }}</span>
+                </label>
+                <span v-if="item.is_critical" class="critical-badge" title="Важлива">🔥</span>
+                <span v-if="item.category" class="category-badge">{{ item.category.name }}</span>
+                <span v-if="item.quantity > 1" class="qty-badge">×{{ item.quantity }}</span>
+                <span v-if="isUnassigningId === item.id" class="unassign-spinner">Знімаємо...</span>
+              </li>
+            </ul>
+          </div>
+        </template>
       </div>
 
       <div class="password-card">
@@ -668,5 +750,123 @@ onMounted(() => {
 }
 .error {
   color: #e74c3c;
+}
+.assigned-card {
+  background: white;
+  border-radius: 10px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  margin-bottom: 30px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.card-head h3 {
+  margin: 0;
+  color: #34495e;
+}
+.assigned-count {
+  background: #42b883;
+  color: white;
+  font-weight: bold;
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+.assigned-empty {
+  color: #7f8c8d;
+  font-size: 14px;
+  padding: 10px 0;
+}
+.loading.small {
+  margin: 0;
+  font-size: 14px;
+}
+.assigned-group {
+  margin-bottom: 18px;
+}
+.assigned-group:last-child {
+  margin-bottom: 0;
+}
+.assigned-trip-title {
+  display: inline-block;
+  color: #2c3e50;
+  font-size: 15px;
+  font-weight: bold;
+  text-decoration: none;
+  margin-bottom: 8px;
+}
+.assigned-trip-title:hover {
+  color: #42b883;
+}
+.assigned-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.assigned-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  margin-bottom: 6px;
+}
+.assigned-item:hover {
+  background: #f0f4f7;
+}
+.assigned-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.assigned-check input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: #27ae60;
+}
+.assigned-item-name {
+  font-size: 15px;
+  color: #2c3e50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category-badge {
+  background: #eef2f5;
+  color: #546e7a;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.qty-badge {
+  background: #e8f5e9;
+  color: #27ae60;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.critical-badge {
+  font-size: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.unassign-spinner {
+  color: #7f8c8d;
+  font-size: 12px;
+  white-space: nowrap;
 }
 </style>
