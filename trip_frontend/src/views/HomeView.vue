@@ -11,7 +11,7 @@ const currentUser = localStorage.getItem('username')
 
 const searchInput = ref('')
 const q = ref('')
-const limit = 20
+const limit = 9
 const total = ref(0)
 const offset = ref(0)
 

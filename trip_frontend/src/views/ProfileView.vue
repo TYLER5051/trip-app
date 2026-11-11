@@ -26,7 +26,7 @@ const total = ref(0)
 const isLoading = ref(true)
 const isLoadingMore = ref(false)
 const errorMessage = ref('')
-const limit = 20
+const limit = 9
 const offset = ref(0)
 
 const newUsername = ref('')

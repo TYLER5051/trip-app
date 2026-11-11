@@ -21,13 +21,8 @@ const accessError = ref(false)
 // Поточного користувача беремо з /users/me (реактивно), не з localStorage
 const currentUser = ref('')
 
-// ---- Речі беремо з сервера: пошук + пагінація (GET /trips/:id/items/) ----
+// ---- Речі беремо з сервера: пошук (GET /trips/:id/items/), без пагінації ----
 const items = ref([])
-const itemsTotal = ref(0)
-const itemsOffset = ref(0)
-const itemsLimit = 50
-const isLoadingItems = ref(false)
-const isLoadingItemsMore = ref(false)
 const itemSearchInput = ref('')
 const itemQ = ref('')
 
@@ -42,42 +37,35 @@ watch(itemSearchInput, () => {
   }, 300)
 })
 
-const buildItemsQuery = () => {
-  const params = new URLSearchParams()
-  params.set('limit', String(itemsLimit))
-  params.set('offset', String(itemsOffset.value))
-  if (itemQ.value) params.set('q', itemQ.value)
-  return params.toString()
-}
-
-// race-guard: якщо користувач швидко ввів новий пошук або натиснув "Ще",
+// race-guard: якщо користувач швидко ввів новий пошук або змінив дані,
 // відповідь старого запиту ігнорується.
-const fetchItems = async (reset = true) => {
+// Бекенд віддає максимум 100 речей за запит, тому качаємо пакетами,
+// поки не зберемо всі. Пагінації в UI немає: весь чекліст видно одразу,
+// а старий список залишається на екрані до заміни новим (без блимання).
+const fetchItems = async () => {
   const seq = ++itemsSeq
-  if (reset) {
-    itemsOffset.value = 0
-    items.value = []
-    isLoadingItems.value = true
-  } else {
-    isLoadingItemsMore.value = true
-  }
-
+  const all = []
   try {
-    const data = await api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+    while (true) {
+      const params = new URLSearchParams()
+      params.set('limit', '100')
+      params.set('offset', String(all.length))
+      if (itemQ.value) params.set('q', itemQ.value)
+
+      const data = await api.get(`/trips/${tripId}/items/?${params.toString()}`)
+      if (seq !== itemsSeq) return
+      all.push(...data.items)
+      if (data.items.length < 100) break
+    }
     if (seq !== itemsSeq) return
-    items.value = reset ? data.items : [...items.value, ...data.items]
-    itemsTotal.value = data.total
+    items.value = all
   } catch (error) {
     if (seq !== itemsSeq) return
     if (error.status === 403 || error.status === 404) {
       accessError.value = true
-    } else if (!reset) {
+    } else if (items.value.length > 0) {
       toast.error(error.message)
     }
-  } finally {
-    if (seq !== itemsSeq) return
-    isLoadingItems.value = false
-    isLoadingItemsMore.value = false
   }
 }
 
@@ -270,16 +258,14 @@ const toggleItemAssignment = async (item) => {
     toast.error(error.message)
   }
 
-  // Оновлюємо статистику та поточну сторінку речей (не скидаємо пагінацію на 0).
+  // Оновлюємо статистику та весь список речей (пагінації немає).
   // Навіть при помилці пере-завантажуємо список, щоб чекбокс повернувся
   // до фактичного стану на сервері.
-  const [freshTrip, itemsData] = await Promise.all([
+  const [freshTrip] = await Promise.all([
     api.get(`/trips/${tripId}`),
-    api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+    fetchItems()
   ])
   trip.value = freshTrip
-  items.value = itemsData.items
-  itemsTotal.value = itemsData.total
 }
 
 // Зняти річ, яку взяв інший учасник, — доступно тільки організатору поїздки
@@ -292,13 +278,11 @@ const unassignOther = async ({ item, user }) => {
     return
   }
 
-  const [freshTrip, itemsData] = await Promise.all([
+  const [freshTrip] = await Promise.all([
     api.get(`/trips/${tripId}`),
-    api.get(`/trips/${tripId}/items/?${buildItemsQuery()}`)
+    fetchItems()
   ])
   trip.value = freshTrip
-  items.value = itemsData.items
-  itemsTotal.value = itemsData.total
 }
 
 // Зміна кількості після створення (тільки автор або організатор)
