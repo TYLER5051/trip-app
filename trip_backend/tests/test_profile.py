@@ -237,7 +237,7 @@ def test_assigned_items_aggregates_across_trips(client, auth_headers):
     assert by_id[own_item["id"]]["trip"] == {"id": own["id"], "title": "Власна поїздка"}
     assert by_id[guest_item["id"]]["trip"]["id"] == guest_trip["id"]
     assert by_id[own_item["id"]]["category"]["name"] == "Спорядження"
-    assert "org" in [u["username"] for u in by_id[own_item["id"]]["assigned_users"]]
+    assert "org" in [a["user"]["username"] for a in by_id[own_item["id"]]["assignments"]]
     assert by_id[own_item["id"]]["quantity"] == 1
 
 

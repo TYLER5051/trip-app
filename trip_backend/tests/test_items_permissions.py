@@ -154,7 +154,7 @@ def test_organizer_can_unassign_participant_take(client, auth_headers):
     # організатор знімає річ із іншого учасника через user_id
     r = unassign_user(client, org, item["id"], u1_id)
     assert r.status_code == 200
-    assert r.json()["assigned_users"] == []
+    assert r.json()["assignments"] == []
 
 
 def test_regular_participant_cannot_unassign_other_take(client, auth_headers):

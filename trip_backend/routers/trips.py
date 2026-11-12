@@ -13,7 +13,7 @@ import secrets
 router = APIRouter(prefix="/trips")
 
 _ITEM_LOAD_OPTIONS = (
-    selectinload(models.Item.assigned_users),
+    selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
     selectinload(models.Item.created_by),
     selectinload(models.Item.category).selectinload(models.Category.created_by),
 )
@@ -27,7 +27,7 @@ def _stats_for_trip(db: Session, trip_id: int):
         .scalar() or 0
     )
     packed_items = (
-        db.query(func.count(models.item_assignments.c.item_id))
+        db.query(func.coalesce(func.sum(models.item_assignments.c.quantity), 0))
         .select_from(models.Item)
         .join(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
         .filter(models.Item.trip_id == trip_id)
@@ -124,7 +124,7 @@ def get_trips(
     packed_rows = (
         db.query(
             models.Item.trip_id,
-            func.count(models.item_assignments.c.item_id).label("packed_items"),
+            func.coalesce(func.sum(models.item_assignments.c.quantity), 0).label("packed_items"),
         )
         .join(models.item_assignments, models.item_assignments.c.item_id == models.Item.id)
         .filter(models.Item.trip_id.in_(trip_ids))
@@ -237,7 +237,9 @@ def get_trip_items(
         base = base.filter(models.Item.category_id == category_id)
 
     if assignee_id is not None:
-        base = base.filter(models.Item.assigned_users.any(models.User.id == assignee_id))
+        base = base.filter(
+            models.Item.assignments.any(models.ItemAssignment.user_id == assignee_id)
+        )
 
     total = base.count()
 

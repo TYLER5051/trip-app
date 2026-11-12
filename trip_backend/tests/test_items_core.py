@@ -189,11 +189,88 @@ def test_assign_up_to_quantity(client, auth_headers):
     assert client.post(f"/items/{item['id']}/assign", headers=org).status_code == 400
 
 
-def test_assign_same_user_twice_rejected(client, auth_headers):
+def test_assign_same_user_updates_quantity(client, auth_headers):
     trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
     item = create_item(client, org, trip_id, cat1, "Палатка", quantity=3)
-    assert client.post(f"/items/{item['id']}/assign", headers=u1).status_code == 200
-    assert client.post(f"/items/{item['id']}/assign", headers=u1).status_code == 400
+    r1 = client.post(f"/items/{item['id']}/assign", json={"quantity": 1}, headers=u1)
+    assert r1.status_code == 200
+    r2 = client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1)
+    assert r2.status_code == 200
+    mine = next(a for a in r2.json()["assignments"] if a["user"]["username"] == "p_one")
+    assert mine["quantity"] == 2
+
+
+def test_increase_own_quantity(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Вода", quantity=3)
+    assert client.post(f"/items/{item['id']}/assign", json={"quantity": 1}, headers=u1).status_code == 200
+    r = client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1)
+    assert r.status_code == 200
+    mine = next(a for a in r.json()["assignments"] if a["user"]["username"] == "p_one")
+    assert mine["quantity"] == 2
+    assert sum(a["quantity"] for a in r.json()["assignments"]) == 2
+
+
+
+def test_assign_quantity_distribution(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Вода", quantity=3)
+    assert client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1).status_code == 200
+    r2 = client.post(f"/items/{item['id']}/assign", json={"quantity": 1}, headers=u2)
+    assert r2.status_code == 200
+
+    by_user = {a["user"]["username"]: a["quantity"] for a in r2.json()["assignments"]}
+    assert by_user == {"p_one": 2, "p_two": 1}
+    # усі 3 одиниці розібрані — ще ніхто (навіть організатор) взяти не може
+    assert client.post(f"/items/{item['id']}/assign", headers=org).status_code == 400
+
+
+def test_assign_quantity_exceeds_item_quantity(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Палатка", quantity=2)
+    assert client.post(f"/items/{item['id']}/assign", json={"quantity": 3}, headers=u1).status_code == 400
+    # нуль або негатив не проходить валідацію
+    assert client.post(f"/items/{item['id']}/assign", json={"quantity": 0}, headers=u1).status_code == 422
+
+
+def test_update_quantity_below_assigned_sum_rejected(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Вода", quantity=3)
+    client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1)
+    client.post(f"/items/{item['id']}/assign", json={"quantity": 1}, headers=u2)
+
+    assert patch(client, org, item["id"], quantity=2).status_code == 400
+    assert patch(client, org, item["id"], quantity=3).status_code == 200
+
+
+def test_trip_packed_stats_count_units(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Вода", quantity=3)
+    client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1)
+    client.post(f"/items/{item['id']}/assign", json={"quantity": 1}, headers=u2)
+
+    detail = client.get(f"/trips/{trip_id}", headers=org).json()
+    assert detail["total_items"] == 3
+    assert detail["packed_items"] == 3
+
+    trips = client.get("/trips/", headers=org).json()["items"]
+    summary = next(t for t in trips if t["id"] == trip_id)
+    assert summary["total_items"] == 3
+    assert summary["packed_items"] == 3
+
+
+def test_assignee_filter_matches_quantity_takers(client, auth_headers):
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Вода", quantity=3)
+    client.post(f"/items/{item['id']}/assign", json={"quantity": 2}, headers=u1)
+
+    u1_id = client.get("/users/me", headers=u1).json()["id"]
+    items = client.get(f"/trips/{trip_id}/items/?assignee_id={u1_id}", headers=org).json()["items"]
+    assert [i["id"] for i in items] == [item["id"]]
+
+    u2_id = client.get("/users/me", headers=u2).json()["id"]
+    items = client.get(f"/trips/{trip_id}/items/?assignee_id={u2_id}", headers=org).json()["items"]
+    assert items == []
 
 
 def test_unassign_when_not_assigned_400(client, auth_headers):
@@ -209,14 +286,15 @@ def test_assign_by_outsider_403(client, auth_headers):
     assert client.post(f"/items/{item['id']}/assign", headers=outsider).status_code == 403
 
 
-def test_assigned_users_in_response(client, auth_headers):
+def test_assignments_in_response(client, auth_headers):
     trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
     item = create_item(client, org, trip_id, cat1, "Палатка")
     client.post(f"/items/{item['id']}/assign", headers=u1)
 
     items = client.get(f"/trips/{trip_id}/items/", headers=org).json()["items"]
     stored = next(i for i in items if i["id"] == item["id"])
-    assert [a["username"] for a in stored["assigned_users"]] == ["p_one"]
+    assert [a["user"]["username"] for a in stored["assignments"]] == ["p_one"]
+    assert stored["assignments"][0]["quantity"] == 1
 
 
 def test_owner_can_take_item(client, auth_headers):
@@ -272,5 +350,5 @@ def test_remove_participant_clears_assignments(client, auth_headers):
 
     items = client.get(f"/trips/{trip_id}/items/", headers=org).json()["items"]
     stored = next(i for i in items if i["id"] == item["id"])
-    assert stored["assigned_users"] == []
+    assert stored["assignments"] == []
 

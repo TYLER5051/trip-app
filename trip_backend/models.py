@@ -13,7 +13,8 @@ item_assignments = Table(
     "item_assignments",
     Base.metadata,
     Column("item_id", Integer, ForeignKey("items.id"), primary_key=True, index=True),
-    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True)
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True),
+    Column("quantity", Integer, nullable=False, default=1)
 )
 
 class User(Base):
@@ -27,7 +28,6 @@ class User(Base):
 
     owned_trips = relationship("Trip", back_populates="owner")
     participating_trips = relationship("Trip", secondary=trip_users, back_populates="participants")
-    items_assigned = relationship("Item", secondary=item_assignments, back_populates="assigned_users")
 
 
 class Trip(Base):
@@ -75,5 +75,11 @@ class Item(Base):
 
     trip = relationship("Trip", back_populates="items")
     category = relationship("Category", back_populates="items")
-    assigned_users = relationship("User", secondary=item_assignments, back_populates="items_assigned")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    assignments = relationship("ItemAssignment", back_populates="item", order_by="ItemAssignment.user_id", cascade="all, delete-orphan")
+
+class ItemAssignment(Base):
+    __table__ = item_assignments
+
+    user = relationship("User")
+    item = relationship("Item", back_populates="assignments")

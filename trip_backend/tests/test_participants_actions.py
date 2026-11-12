@@ -60,7 +60,7 @@ def test_leave_frees_assigned_items(client, auth_headers):
     assert not any(u["username"] == "user_x" for u in trip_detail["participants"])
     items_list = client.get(f"/trips/{trip['id']}/items/", headers=org).json()["items"]
     free_item = next(i for i in items_list if i["id"] == item["id"])
-    assert free_item["assigned_users"] == []
+    assert free_item["assignments"] == []
 
 
 def test_remove_participant_frees_items(client, auth_headers):
@@ -83,7 +83,7 @@ def test_remove_participant_frees_items(client, auth_headers):
     assert not any(u["username"] == "user_y" for u in trip_detail["participants"])
     items_list = client.get(f"/trips/{trip['id']}/items/", headers=org).json()["items"]
     free_item = next(i for i in items_list if i["id"] == item["id"])
-    assert free_item["assigned_users"] == []
+    assert free_item["assignments"] == []
 
 
 def test_non_participant_cannot_leave(client, auth_headers):

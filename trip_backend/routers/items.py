@@ -1,5 +1,6 @@
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Body
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
@@ -57,7 +58,7 @@ def create_item(
     refreshed_item = (
     db.query(models.Item)
     .options(
-        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
         selectinload(models.Item.created_by),
         selectinload(models.Item.category),
     )
@@ -111,8 +112,8 @@ def update_item(
             item.name = item_update.name
 
         if item_update.quantity is not None:
-            if item_update.quantity < len(item.assigned_users):
-                raise HTTPException(status_code=400, detail="Кількість не може бути меншою за кількість уже призначених людей")
+            if item_update.quantity < sum(a.quantity for a in item.assignments):
+                raise HTTPException(status_code=400, detail="Кількість не може бути меншою за кількість уже розібраних одиниць")
             item.quantity = item_update.quantity
 
         if item_update.note is not None:
@@ -141,7 +142,7 @@ def update_item(
     refreshed_item = (
     db.query(models.Item)
     .options(
-        selectinload(models.Item.assigned_users),
+        selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
         selectinload(models.Item.created_by),
         selectinload(models.Item.category),
     )
@@ -153,8 +154,10 @@ def update_item(
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
 def assign_item(
-    item_id: int, db: Session = Depends(get_db), 
-    current_user: models.User = Depends(get_current_user)
+    item_id: int,
+    assign_request: Optional[schemas.AssignItemRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
@@ -167,32 +170,51 @@ def assign_item(
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
 
-    if current_user in item.assigned_users:
-        raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
+    requested_quantity = assign_request.quantity if assign_request else 1
 
-    if len(item.assigned_users) >= item.quantity:
+    current_total = (
+        db.query(func.coalesce(func.sum(models.ItemAssignment.quantity), 0))
+        .filter(models.ItemAssignment.item_id == item.id)
+        .scalar()
+    )
+
+    assignment = (
+        db.query(models.ItemAssignment)
+        .filter(
+            models.ItemAssignment.item_id == item.id,
+            models.ItemAssignment.user_id == current_user.id,
+        )
+        .first()
+    )
+    existing_quantity = assignment.quantity if assignment else 0
+
+    if current_total - existing_quantity + requested_quantity > item.quantity:
         raise HTTPException(status_code=400, detail="Цю річ уже розібрали — кількість вичерпана")
 
+    if assignment is None:
+        assignment = models.ItemAssignment(item_id=item.id, user_id=current_user.id)
+
+    assignment.quantity = requested_quantity
+
     try:
-        item.assigned_users.append(current_user)
+        db.add(assignment)
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
-    
+
     refreshed_item = (
-    db.query(models.Item)
-    .options(
-        selectinload(models.Item.assigned_users),
-        selectinload(models.Item.created_by),
-        selectinload(models.Item.category),
-    )
-    .filter(models.Item.id == item_id)
-    .first()
+        db.query(models.Item)
+        .options(
+            selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
+            selectinload(models.Item.created_by),
+            selectinload(models.Item.category),
+        )
+        .filter(models.Item.id == item_id)
+        .first()
     )
 
     return refreshed_item
-
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
 def unassign_item(
@@ -216,30 +238,40 @@ def unassign_item(
         if trip.owner_id != current_user.id:
             raise HTTPException(status_code=403, detail="Тільки організатор може знімати позначки інших учасників")
         target_user = db.get(models.User, user_id)
-        if target_user is None or target_user not in item.assigned_users:
+        if target_user is None:
             raise HTTPException(status_code=400, detail="Цей користувач не брав цю річ")
     else:
         target_user = current_user
 
-    if target_user not in item.assigned_users:
+    assignment = (
+        db.query(models.ItemAssignment)
+        .filter(
+            models.ItemAssignment.item_id == item.id,
+            models.ItemAssignment.user_id == target_user.id,
+        )
+        .first()
+    )
+    if assignment is None:
+        if user_id is not None:
+            raise HTTPException(status_code=400, detail="Цей користувач не брав цю річ")
         raise HTTPException(status_code=400, detail="Ви не брали цю річ")
 
     try:
-        item.assigned_users.remove(target_user)
+        db.delete(assignment)
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Не вдалося зняти позначку. Спробуйте ще раз")
-    
+
     refreshed_item = (
-    db.query(models.Item)
-    .options(
-        selectinload(models.Item.assigned_users),
-        selectinload(models.Item.created_by),
-        selectinload(models.Item.category),
-    )
-    .filter(models.Item.id == item_id)
-    .first()
+        db.query(models.Item)
+        .options(
+            selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
+            selectinload(models.Item.created_by),
+            selectinload(models.Item.category),
+        )
+        .filter(models.Item.id == item_id)
+        .first()
     )
 
     return refreshed_item

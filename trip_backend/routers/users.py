@@ -66,7 +66,7 @@ def get_assigned_items(
         .options(
             selectinload(models.Item.trip),
             selectinload(models.Item.category),
-            selectinload(models.Item.assigned_users),
+            selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
         )
         .join(models.item_assignments, models.Item.id == models.item_assignments.c.item_id)
         .filter(models.item_assignments.c.user_id == current_user.id)
@@ -143,6 +143,10 @@ def delete_account(
     trips = db.query(models.Trip).filter(models.Trip.owner_id == current_user.id).all()
     for trip in trips:
         db.delete(trip)
+
+    db.query(models.ItemAssignment).filter(
+        models.ItemAssignment.user_id == current_user.id
+    ).delete(synchronize_session=False)
 
     db.delete(current_user)
     db.commit()

@@ -67,11 +67,19 @@ class ItemUpdate(BaseModel):
     category_id: Optional[int] = Field(default=None, description="Нова категорія; null = не міняти")
     model_config = ConfigDict(str_strip_whitespace=True)
 
+class ItemAssignmentResponse(BaseModel):
+    user: UserResponse
+    quantity: int = Field(default=1, ge=1)
+    model_config = ConfigDict(from_attributes=True)
+
+class AssignItemRequest(BaseModel):
+    quantity: int = Field(default=1, ge=1)
+
 class ItemResponse(ItemBase):
     id: int
     category_id: Optional[int] = None
     category: Optional[CategoryResponse] = None
-    assigned_users: List[UserResponse] = Field(default_factory=list)
+    assignments: List[ItemAssignmentResponse] = Field(default_factory=list)
     created_by: Optional[UserResponse] = None
     model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
 
@@ -127,7 +135,7 @@ class AssignedItemResponse(BaseModel):
     is_critical: bool = False
     trip: TripShortResponse
     category: Optional[CategoryResponse] = None
-    assigned_users: List[UserResponse] = Field(default_factory=list)
+    assignments: List[ItemAssignmentResponse] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 class AssignedItemsListResponse(BaseModel):

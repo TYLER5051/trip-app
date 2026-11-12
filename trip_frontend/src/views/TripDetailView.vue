@@ -131,9 +131,10 @@ const packingPercent = computed(() => {
 // Видалення учасника (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
 const removeParticipant = async (participantId) => {
   const participant = trip.value?.participants?.find(p => p.id === participantId)
-  const freedCount = items.value.filter(item =>
-    item.assigned_users && item.assigned_users.some(u => u.id === participantId)
-  ).length
+  const freedCount = items.value.reduce((sum, item) => {
+    const taken = (item.assignments || []).filter(a => a.user.id === participantId)
+    return sum + taken.reduce((s, a) => s + (a.quantity || 0), 0)
+  }, 0)
 
   const who = participant ? `«${participant.username}»` : `ID ${participantId}`
   if (!confirm(`Видалити учасника ${who}? Його взяті речі (${freedCount}) стануть вільними.`)) return
@@ -246,13 +247,13 @@ const addItem = async (payload) => {
 
 // Взяти річ через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
 const toggleItemAssignment = async (item) => {
-  const assignedByMe = item.assigned_users && item.assigned_users.some(a => a.username === currentUser.value)
+  const assignedByMe = (item.assignments || []).some(a => a.user.username === currentUser.value)
 
   try {
     if (assignedByMe) {
       await api.delete(`/items/${item.id}/assign`)
     } else {
-      await api.post(`/items/${item.id}/assign`)
+      await api.post(`/items/${item.id}/assign`, { quantity: 1 })
     }
   } catch (error) {
     toast.error(error.message)
@@ -265,6 +266,18 @@ const toggleItemAssignment = async (item) => {
     api.get(`/trips/${tripId}`),
     fetchItems()
   ])
+  trip.value = freshTrip
+}
+
+// Зміна своєї кількості через степер (лише для своєї позначки)
+const changeMyQuantity = async ({ itemId, quantity }) => {
+  try {
+    if (quantity <= 0) await api.delete(`/items/${itemId}/assign`)
+    else await api.post(`/items/${itemId}/assign`, { quantity })
+  } catch (error) {
+    toast.error(error.message)
+  }
+  const [freshTrip] = await Promise.all([api.get(`/trips/${tripId}`), fetchItems()])
   trip.value = freshTrip
 }
 
@@ -441,6 +454,7 @@ onMounted(async () => {
         :ownerUsername="trip.owner?.username"
         @toggle="toggleItemAssignment"
         @unassign-other="unassignOther"
+        @update-my-quantity="changeMyQuantity"
         @delete="deleteItem"
         @rename="renameItem"
         @update-quantity="updateItemQuantity"

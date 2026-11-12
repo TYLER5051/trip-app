@@ -97,7 +97,7 @@ def test_participant_delete_cleans_foreign_trip(client, auth_headers):
     # річ, яку створив user, лишилась, але created_by став null
     assert palatka["created_by"] is None
     # річ, яку брав user, звільнилась
-    assert piltka["assigned_users"] == []
+    assert piltka["assignments"] == []
 
     assert client.get("/users/me", headers=user).status_code == 401
     assert client.post("/login", data={"username": "user", "password": "password123"}).status_code == 401

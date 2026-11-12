@@ -9,7 +9,7 @@ const props = defineProps({
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other'])
+const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other', 'update-my-quantity'])
 
 // Стан редагування назви речі
 const editingId = ref(null)
@@ -31,14 +31,18 @@ const canModifyItem = (item) => {
 // Чи поточний користувач — організатор поїздки
 const isOwner = computed(() => !!props.ownerUsername && props.ownerUsername === props.currentUser)
 
-// Чи «взяв» річ поточний користувач (його чекбокс)
-const assignedByMe = (item) => item.assigned_users && item.assigned_users.some(a => a.username === props.currentUser)
+// Чи «взяв» річ поточний користувач (його призначення з кількістю)
+const myAssignment = (item) => (item.assignments || []).find(a => a.user.username === props.currentUser)
+const assignedByMe = (item) => !!myAssignment(item)
 
-// Учасники, які взяли річ, КРІМ поточного користувача (кількість людей може бути будь-якою = quantity)
-const otherAssignees = (item) => item.assigned_users ? item.assigned_users.filter(a => a.username !== props.currentUser) : []
+// Призначення інших учасників (крім поточного користувача)
+const otherAssignments = (item) => (item.assignments || []).filter(a => a.user.username !== props.currentUser)
+
+// Сумарно розібраних одиниць
+const totalAssigned = (item) => (item.assignments || []).reduce((s, a) => s + (a.quantity || 0), 0)
 
 // Всі місця (quantity) уже розібрані
-const itemFull = (item) => !!(item.assigned_users && item.assigned_users.length >= item.quantity)
+const itemFull = (item) => totalAssigned(item) >= item.quantity
 
 // Фільтри списку речей
 const showOnlyFree = ref(false)
@@ -60,7 +64,7 @@ const filteredGroups = computed(() => {
     }
 
     if (showOnlyFree.value) {
-      list = list.filter(item => !item.assigned_users || item.assigned_users.length === 0)
+      list = list.filter(item => !itemFull(item))
     }
 
     if (showMyItems.value) {
@@ -77,8 +81,8 @@ const filteredGroups = computed(() => {
     if (sortByStatus.value !== 'none') {
       const freeFirst = sortByStatus.value === 'free-first'
       list = [...list].sort((a, b) => {
-        const aFree = !a.assigned_users || a.assigned_users.length === 0 ? 1 : 0
-        const bFree = !b.assigned_users || b.assigned_users.length === 0 ? 1 : 0
+        const aFree = !itemFull(a) ? 1 : 0
+        const bFree = !itemFull(b) ? 1 : 0
         return freeFirst ? bFree - aFree : aFree - bFree
       })
     }
@@ -157,8 +161,9 @@ const saveCategoryRename = (cat) => {
 }
 
 const getCategoryProgress = (items = []) => {
-  const packed = items.filter(item => item.assigned_users && item.assigned_users.length > 0).length
-  return `${packed}/${items.length}`
+  const packed = items.reduce((s, item) => s + totalAssigned(item), 0)
+  const total = items.reduce((s, item) => s + (item.quantity || 0), 0)
+  return `${packed}/${total}`
 }
 </script>
 
@@ -266,6 +271,19 @@ const getCategoryProgress = (items = []) => {
                   @change="emit('toggle', item)"
                   title="Взяти річ"
                 />
+                <!-- Степер своєї кількості (поруч із чекбоксом) -->
+                <span v-if="assignedByMe(item)" class="qty-stepper" title="Моя кількість">
+                  <button
+                    class="stepper-btn"
+                    @click="emit('update-my-quantity', { itemId: item.id, quantity: myAssignment(item).quantity - 1 })"
+                  >−</button>
+                  <span class="stepper-value">{{ myAssignment(item).quantity }}</span>
+                  <button
+                    class="stepper-btn"
+                    :disabled="itemFull(item)"
+                    @click="emit('update-my-quantity', { itemId: item.id, quantity: myAssignment(item).quantity + 1 })"
+                  >+</button>
+                </span>
                 <span class="item-info">
                   <span class="item-name" :class="{ assigned: assignedByMe(item) }">
                     {{ item.name }}
@@ -283,16 +301,16 @@ const getCategoryProgress = (items = []) => {
               </label>
 
               <span
-                v-if="isOwner && otherAssignees(item).length"
+                v-if="isOwner && otherAssignments(item).length"
                 class="owner-unassign"
               >
                 <button
-                  v-for="a in otherAssignees(item)"
-                  :key="a.id"
+                  v-for="a in otherAssignments(item)"
+                  :key="a.user.id"
                   class="unassign-inline-btn"
-                  :title="`Зняти річ із ${a.username}`"
-                  @click="emit('unassign-other', { item, user: a })"
-                >Зняти: {{ a.username }}</button>
+                  :title="`Зняти річ із ${a.user.username}`"
+                  @click="emit('unassign-other', { item, user: a.user })"
+                >Зняти: {{ a.user.username }}</button>
               </span>
 
               <span v-if="item.created_by" class="creator-badge">
@@ -304,16 +322,16 @@ const getCategoryProgress = (items = []) => {
                 Автор: {{ item.created_by.username }}
               </span>
               <span
-                v-for="a in item.assigned_users"
-                :key="a.id"
+                v-for="a in item.assignments"
+                :key="a.user.id"
                 class="assignee-badge"
-                :title="a.username === currentUser ? 'Ви взяли цю річ' : `Цю річ взяв ${a.username}`"
+                :title="a.user.username === currentUser ? 'Ви взяли цю річ' : `Цю річ взяв ${a.user.username}`"
               >
-                <UserAvatar :username="a.username" :color="a.avatar_color" :size="18" />
-                ✓ Взяв {{ a.username }}
+                <UserAvatar :username="a.user.username" :color="a.user.avatar_color" :size="18" />
+                ✓ {{ a.user.username }}<span v-if="a.quantity > 1" class="assignee-qty">×{{ a.quantity }}</span>
               </span>
               <span v-if="item.quantity > 1" class="taken-count" :class="{ full: itemFull(item) }">
-                {{ item.assigned_users ? item.assigned_users.length : 0 }}/{{ item.quantity }}
+                {{ totalAssigned(item) }}/{{ item.quantity }}
               </span>
             </div>
 
@@ -561,6 +579,43 @@ const getCategoryProgress = (items = []) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+.stepper-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f8f9fa;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: #2c3e50;
+}
+.stepper-btn:hover:not(:disabled) {
+  background: #e8f5e9;
+  border-color: #27ae60;
+}
+.stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.stepper-value {
+  min-width: 22px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: bold;
+  color: #2c3e50;
+}
+.assignee-qty {
+  margin-left: 4px;
+  font-weight: normal;
+  opacity: 0.85;
 }
 .creator-badge {
   background-color: #fdf2e3;
