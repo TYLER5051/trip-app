@@ -15,6 +15,15 @@ const limit = 9
 const total = ref(0)
 const offset = ref(0)
 
+// Вкладки «Активні» / «Архів»
+const activeTab = ref('active')
+
+const switchTab = (tab) => {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  fetchTrips()
+}
+
 let searchTimer = null
 
 watch(searchInput, () => {
@@ -26,6 +35,8 @@ watch(searchInput, () => {
 })
 
 const newTripTitle = ref('')
+const newTripStart = ref('')
+const newTripEnd = ref('')
 const isCreating = ref(false)
 const createError = ref('')
 
@@ -34,6 +45,7 @@ const buildQuery = () => {
   params.set('limit', String(limit))
   params.set('offset', String(offset.value))
   if (q.value) params.set('q', q.value)
+  if (activeTab.value === 'archived') params.set('role', 'archived')
   return params.toString()
 }
 
@@ -79,8 +91,14 @@ const createTrip = async () => {
   createError.value = ''
 
   try {
-    await api.post('/trips/', { title: newTripTitle.value.trim() })
+    await api.post('/trips/', {
+      title: newTripTitle.value.trim(),
+      start_date: newTripStart.value || null,
+      end_date: newTripEnd.value || null
+    })
     newTripTitle.value = ''
+    newTripStart.value = ''
+    newTripEnd.value = ''
     await fetchTrips()
   } catch (error) {
     createError.value = error.message
@@ -112,7 +130,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="currentUser" class="create-trip-card">
+    <div class="tab-bar">
+      <button class="tab-btn" :class="{ active: activeTab === 'active' }" @click="switchTab('active')">Активні</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'archived' }" @click="switchTab('archived')">Архів</button>
+    </div>
+
+    <div v-if="currentUser && activeTab === 'active'" class="create-trip-card">
       <h3>Створити нову поїздку</h3>
       <form @submit.prevent="createTrip" class="create-form">
         <input 
@@ -121,6 +144,14 @@ onMounted(() => {
           placeholder="Назва поїздки" 
           required
         />
+        <label class="create-date">
+          <span>Початок</span>
+          <input type="date" v-model="newTripStart" />
+        </label>
+        <label class="create-date">
+          <span>Кінець</span>
+          <input type="date" v-model="newTripEnd" />
+        </label>
         <button type="submit" :disabled="!canCreateTrip">
           {{ isCreating ? 'Створення...' : 'Створити' }}
         </button>
@@ -149,7 +180,7 @@ onMounted(() => {
       </div>
 
       <div v-else-if="total === 0" class="empty">
-        Поки що немає жодної поїздки. Створи першу вище!
+        {{ activeTab === 'archived' ? 'Архів порожній.' : 'Поки що немає жодної поїздки. Створи першу вище!' }}
       </div>
 
       <template v-else>
@@ -180,6 +211,29 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 25px;
+}
+.tab-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.tab-btn {
+  background: white;
+  border: 1px solid #e1e8ed;
+  color: #34495e;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.tab-btn.active {
+  background: #42b883;
+  border-color: #42b883;
+  color: white;
+}
+.tab-btn:hover:not(.active) {
+  border-color: #42b883;
 }
 h1 {
   color: #2c3e50;
@@ -238,14 +292,28 @@ h1 {
 }
 .create-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
-.create-form input {
+.create-form > input[type="text"] {
   flex: 1;
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 5px;
   font-size: 15px;
+  min-width: 200px;
+}
+.create-date {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: #7f8c8d;
+  gap: 2px;
+}
+.create-date input[type="date"] {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
 }
 .create-form button {
   background-color: #42b883;

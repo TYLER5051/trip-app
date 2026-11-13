@@ -46,6 +46,8 @@ def create_trip(
         owner_id=current_user.id,
         invite_token=secrets.token_urlsafe(32),
         invite_expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        start_date=trip.start_date,
+        end_date=trip.end_date,
     )
 
     db.add(db_trip)
@@ -70,7 +72,7 @@ def get_trips(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     q: Optional[str] = Query(default=None, max_length=100),
-    role: Optional[str] = Query(default=None, pattern="^(owned|joined)$"),
+    role: Optional[str] = Query(default=None, pattern="^(owned|joined|archived)$"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0)
 ):
@@ -83,12 +85,20 @@ def get_trips(
     )
 
     if role == "owned":
-        base = base.filter(models.Trip.owner_id == current_user.id)
+        base = base.filter(
+            models.Trip.owner_id == current_user.id,
+            models.Trip.is_archived.is_(False),
+        )
     elif role == "joined":
         base = base.filter(
             models.Trip.owner_id != current_user.id,
             models.Trip.participants.any(models.User.id == current_user.id),
+            models.Trip.is_archived.is_(False),
         )
+    elif role == "archived":
+        base = base.filter(models.Trip.is_archived.is_(True))
+    else:
+        base = base.filter(models.Trip.is_archived.is_(False))
 
     if query_text:
         escaped = query_text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
@@ -195,8 +205,19 @@ def update_trip(
     db: Session = Depends(get_db),
     trip: models.Trip = Depends(get_owned_trip)
 ):
+    new_start = trip_update.start_date if "start_date" in trip_update.model_fields_set else trip.start_date
+    new_end = trip_update.end_date if "end_date" in trip_update.model_fields_set else trip.end_date
+    if new_start is not None and new_end is not None and new_start > new_end:
+        raise HTTPException(status_code=422, detail="Дата початку не може бути пізнішою за дату завершення")
+
     if trip_update.title is not None:
         trip.title = trip_update.title
+
+    if "start_date" in trip_update.model_fields_set:
+        trip.start_date = trip_update.start_date
+
+    if "end_date" in trip_update.model_fields_set:
+        trip.end_date = trip_update.end_date
 
     db.commit()
     db.refresh(trip)
@@ -336,6 +357,28 @@ def transfer_owner(
     db.commit()
     db.refresh(trip)
 
+    return trip
+
+@router.post("/{trip_id}/archive", response_model=schemas.TripDetailResponse)
+def archive_trip(
+    trip: models.Trip = Depends(get_owned_trip),
+    db: Session = Depends(get_db)
+):
+    trip.is_archived = True
+    db.commit()
+    trip.total_items, trip.packed_items = _stats_for_trip(db, trip.id)
+
+    return trip
+
+@router.post("/{trip_id}/unarchive", response_model=schemas.TripDetailResponse)
+def unarchive_trip(
+    trip: models.Trip = Depends(get_owned_trip),
+    db: Session = Depends(get_db)
+):
+    trip.is_archived = False
+    db.commit()
+    trip.total_items, trip.packed_items = _stats_for_trip(db, trip.id)
+    
     return trip
     
 @router.delete("/{trip_id}/categories/{category_id}")

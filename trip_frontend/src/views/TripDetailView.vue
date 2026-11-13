@@ -387,6 +387,40 @@ const renameTrip = async (newTitle) => {
   }
 }
 
+// Архівація / розархівація поїздки (тільки організатор)
+const archiveTrip = async () => {
+  if (!confirm('Архівувати поїздку? Вона зникне зі списку активних, але всі дані збережуться.')) return
+
+  try {
+    const fresh = await api.post(`/trips/${tripId}/archive`)
+    trip.value = fresh
+    toast.success('Поїздку заархівовано.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
+const unarchiveTrip = async () => {
+  try {
+    const fresh = await api.post(`/trips/${tripId}/unarchive`)
+    trip.value = fresh
+    toast.success('Поїздку повернуто з архіву.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
+// Зміна дат поїздки (тільки організатор)
+const changeTripDates = async ({ start_date, end_date }) => {
+  try {
+    const fresh = await api.patch(`/trips/${tripId}`, { start_date, end_date })
+    trip.value = fresh
+    toast.success('Дати поїздки збережено.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
 onMounted(async () => {
   try {
     const me = await api.get('/users/me')
@@ -419,6 +453,9 @@ onMounted(async () => {
         @leave="leaveTrip"
         @delete="deleteTrip"
         @rename="renameTrip"
+        @archive="archiveTrip"
+        @unarchive="unarchiveTrip"
+        @change-dates="changeTripDates"
       />
 
       <div class="packing-progress-card">

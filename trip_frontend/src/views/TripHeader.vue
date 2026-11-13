@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { toast } from 'vue3-toastify'
 import api from '../services/api'
 
@@ -9,7 +9,7 @@ const props = defineProps({
   isParticipant: { type: Boolean, required: true }
 })
 
-const emit = defineEmits(['leave', 'delete', 'rename'])
+const emit = defineEmits(['leave', 'delete', 'rename', 'archive', 'unarchive', 'change-dates'])
 
 const isEditingTitle = ref(false)
 const newTitle = ref('')
@@ -64,11 +64,69 @@ const rotateInviteLink = async () => {
     toast.error(error.message || 'Не вдалося змінити інвайт-посилання')
   }
 }
+
+const formatDate = (d) => {
+  if (!d) return null
+  return new Date(d + 'T00:00:00').toLocaleDateString('uk-UA')
+}
+
+// Дата поїздки для шапки (початок – кінець, або те, що вказано)
+const tripDates = computed(() => {
+  const s = formatDate(props.trip.start_date)
+  const e = formatDate(props.trip.end_date)
+  if (s && e) return `${s} – ${e}`
+  return s || e || ''
+})
+
+const isOwner = computed(() => !!props.trip.owner && props.trip.owner.username === props.currentUser)
+
+// Редагування дат поїздки (тільки організатор)
+const isEditingDates = ref(false)
+const dateStart = ref('')
+const dateEnd = ref('')
+
+const startEditDates = () => {
+  dateStart.value = props.trip.start_date || ''
+  dateEnd.value = props.trip.end_date || ''
+  isEditingDates.value = true
+}
+
+const cancelEditDates = () => {
+  isEditingDates.value = false
+}
+
+const saveDates = () => {
+  emit('change-dates', {
+    start_date: dateStart.value || null,
+    end_date: dateEnd.value || null
+  })
+  isEditingDates.value = false
+}
 </script>
 
 <template>
   <div class="trip-header">
-    <h1>{{ trip.title }}</h1>
+    <h1>
+      {{ trip.title }}
+      <span v-if="trip.is_archived" class="archived-badge">Архівовано</span>
+    </h1>
+    <div class="trip-dates-row">
+      <p v-if="tripDates" class="trip-dates">📅 {{ tripDates }}</p>
+      <button v-if="isOwner && !isEditingDates" class="edit-dates-btn" @click="startEditDates">Змінити дати</button>
+
+      <div v-if="isEditingDates" class="dates-form">
+        <label class="dates-field">
+          Початок
+          <input type="date" v-model="dateStart" />
+        </label>
+        <label class="dates-field">
+          Кінець
+          <input type="date" v-model="dateEnd" />
+        </label>
+        <button class="dates-save-btn" @click="saveDates">Зберегти</button>
+        <button class="dates-cancel-btn" @click="cancelEditDates">Скасувати</button>
+      </div>
+    </div>
     <p class="owner">Організатор: <strong>{{ trip.owner?.username }}</strong></p>
     
     <div class="actions-bar">
@@ -98,6 +156,18 @@ const rotateInviteLink = async () => {
       <button v-if="trip.owner?.username === currentUser" @click="rotateInviteLink" class="rotate-invite-btn">
         Нове інвайт-посилання
       </button>
+
+      <!-- Архівація поїздки (тільки організатор) -->
+      <button
+        v-if="trip.owner?.username === currentUser && trip.is_archived"
+        @click="emit('unarchive')"
+        class="unarchive-btn"
+      >Повернути з архіву</button>
+      <button
+        v-else-if="trip.owner?.username === currentUser"
+        @click="emit('archive')"
+        class="archive-btn"
+      >Архівувати</button>
 
       <!-- Перейменування поїздки (тільки організатор) -->
       <button 
@@ -257,5 +327,102 @@ const rotateInviteLink = async () => {
 }
 .rename-cancel-btn:hover {
   background-color: #7f8c8d;
+}
+.trip-dates {
+  color: #7f8c8d;
+  font-size: 14px;
+  margin: 0 0 8px 0;
+}
+.archived-badge {
+  background-color: #f1c40f;
+  color: #7d6608;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+.archive-btn {
+  background-color: #607d8b;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.archive-btn:hover {
+  background-color: #455a64;
+}
+.unarchive-btn {
+  background-color: #f1c40f;
+  color: #7d6608;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.unarchive-btn:hover {
+  background-color: #f39c12;
+  color: white;
+}
+.trip-dates-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.edit-dates-btn {
+  background: none;
+  border: none;
+  color: #42b883;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+}
+.edit-dates-btn:hover {
+  text-decoration: underline;
+}
+.dates-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #f8f9fa;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.dates-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: #7f8c8d;
+  gap: 2px;
+}
+.dates-field input[type="date"] {
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+.dates-save-btn {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.dates-cancel-btn {
+  background-color: #95a5a6;
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
 }
 </style>

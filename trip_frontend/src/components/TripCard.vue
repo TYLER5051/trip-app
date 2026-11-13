@@ -11,12 +11,28 @@ const packingPercent = computed(() => {
   if (!totalItems) return 0
   return Math.round(((props.trip.packed_items || 0) / totalItems) * 100)
 })
+
+const formatDate = (d) => {
+  if (!d) return null
+  return new Date(d + 'T00:00:00').toLocaleDateString('uk-UA')
+}
+
+const tripDates = computed(() => {
+  const s = formatDate(props.trip.start_date)
+  const e = formatDate(props.trip.end_date)
+  if (s && e) return `${s} – ${e}`
+  return s || e || ''
+})
 </script>
 
 <template>
   <router-link :to="`/trips/${trip.id}`" class="trip-card-link">
     <div class="trip-card">
-      <h2>{{ trip.title }}</h2>
+      <h2>
+        {{ trip.title }}
+        <span v-if="trip.is_archived" class="archived-badge">Архівовано</span>
+      </h2>
+      <p v-if="tripDates" class="trip-dates">📅 {{ tripDates }}</p>
       <p class="owner" v-if="trip.owner">
         <span class="owner-inline">
           <UserAvatar
@@ -60,6 +76,21 @@ const packingPercent = computed(() => {
   margin: 0 0 10px 0;
   color: #34495e;
   font-size: 20px;
+}
+.trip-dates {
+  color: #7f8c8d;
+  font-size: 13px;
+  margin: 5px 0;
+}
+.archived-badge {
+  background-color: #f1c40f;
+  color: #7d6608;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 .owner {
   color: #7f8c8d;

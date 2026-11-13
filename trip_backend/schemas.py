@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import List, Optional
-
+from datetime import date
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=30)
@@ -91,7 +91,19 @@ class ItemListResponse(BaseModel):
 
 class TripBase(BaseModel):
     title: str = Field(min_length=3, max_length=100)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     model_config = ConfigDict(str_strip_whitespace=True)
+
+    @model_validator(mode="after")
+    def check_date(self):
+        if (
+            self.start_date is not None
+            and self.end_date is not None
+            and self.start_date > self.end_date
+        ):
+            raise ValueError("Дата початку не може бути пізнішою за дату завершення")
+        return self
 
 class TripCreate(TripBase):
     pass
@@ -106,6 +118,7 @@ class TripDetailResponse(TripBase):
     participants: List[UserResponse] = Field(default_factory=list)
     total_items: int = 0
     packed_items: int = 0
+    is_archived: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 class TripSummaryResponse(TripBase):
@@ -114,6 +127,7 @@ class TripSummaryResponse(TripBase):
     participants_count: int = 0
     total_items: int = 0
     packed_items: int = 0
+    is_archived: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 class TripListResponse(BaseModel):

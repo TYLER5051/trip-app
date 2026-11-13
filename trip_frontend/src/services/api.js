@@ -33,10 +33,18 @@ function fieldLabel(loc) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'поле'
 }
 
+function cleanMsg(msg) {
+  if (!msg) return ''
+  return msg.replace(/^Value error,\s*/i, '').replace(/^Assertion failed,\s*/i, '')
+}
+
 // Перетворює один обʼєкт помилки валідації Pydantic v2 у зрозумілий український текст.
 function validationMessage(err) {
   const field = fieldLabel(err && err.loc)
   const ctx = (err && err.ctx) || {}
+  if (err && err.type === 'value_error') {
+    return cleanMsg(err.msg) || 'Невірне значення'
+  }
   switch (err && err.type) {
     case 'missing':
       return `Поле «${field}» обов'язкове`
@@ -54,7 +62,7 @@ function validationMessage(err) {
     case 'less_than_equal':
       return `«${field}» має бути не більше ${ctx.le}`
     default:
-      return err && err.msg ? `«${field}»: ${err.msg}` : `Помилка валідації поля «${field}»`
+      return err && err.msg ? `«${field}»: ${cleanMsg(err.msg)}` : `Помилка валідації поля «${field}»`
   }
 }
 
