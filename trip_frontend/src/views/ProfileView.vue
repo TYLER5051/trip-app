@@ -75,12 +75,6 @@ const changeAvatarColor = async (color) => {
   }
 }
 
-const totalItems = computed(() => profile.value?.total_items_count ?? 0)
-const packedItems = computed(() => profile.value?.packed_items_count ?? 0)
-const packedPercent = computed(() =>
-  totalItems.value === 0 ? 0 : Math.round((packedItems.value / totalItems.value) * 100)
-)
-
 const hasMore = computed(() => trips.value.length < total.value)
 
 const fetchProfile = async () => {
@@ -330,16 +324,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="packing-card">
-        <div class="packing-head">
-          <strong>Зібрано {{ packedItems }} із {{ totalItems }} речей за всіма поїздками</strong>
-          <span class="packing-percent">{{ packedPercent }}%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: packedPercent + '%' }"></div>
-        </div>
-      </div>
-
       <div class="assigned-card">
         <div class="card-head">
           <h3>Мої доручені речі</h3>
@@ -576,37 +560,6 @@ onMounted(() => {
   margin-top: 8px;
   color: #7f8c8d;
   font-size: 14px;
-}
-.packing-card {
-  background: white;
-  border-radius: 10px;
-  padding: 18px 24px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-  margin-bottom: 30px;
-}
-.packing-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  color: #2c3e50;
-  font-size: 15px;
-}
-.packing-percent {
-  color: #42b883;
-  font-weight: bold;
-}
-.progress-bar {
-  background: #ecf0f1;
-  border-radius: 12px;
-  height: 12px;
-  overflow: hidden;
-}
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #42b883, #27ae60);
-  border-radius: 12px;
-  transition: width 0.3s ease;
 }
 .password-card {
   background: white;
