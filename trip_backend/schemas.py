@@ -89,6 +89,14 @@ class ItemListResponse(BaseModel):
     limit: int
     offset: int
 
+class CopyItemRequest(BaseModel):
+    source_trip_id: int
+
+class CopyItemResponse(BaseModel):
+    copied_items: int
+    skipped_items: int
+    message: str
+
 class TripBase(BaseModel):
     title: str = Field(min_length=3, max_length=100)
     start_date: Optional[date] = None

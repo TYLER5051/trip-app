@@ -224,6 +224,66 @@ def update_trip(
     trip.total_items, trip.packed_items = _stats_for_trip(db, trip_id)
     return trip
 
+@router.post("/{trip_id}/copy-items", response_model=schemas.CopyItemResponse)
+def copy_trip(
+    trip_id: int,
+    copy_request: schemas.CopyItemRequest,
+    trip: models.Trip = Depends(get_accessible_trip),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    if copy_request.source_trip_id == trip_id:
+        raise HTTPException(status_code=400, detail="Не можна копіювати речі з цієї ж поїздки")
+
+    source_trip = (
+        db.query(models.Trip)
+        .options(
+            selectinload(models.Trip.items).selectinload(models.Item.category),
+            selectinload(models.Trip.categories)
+        )
+        .filter(models.Trip.id == copy_request.source_trip_id)
+        .first()
+    )
+    if not source_trip:
+        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+
+    if source_trip.owner_id != current_user.id and not user_is_member(db, source_trip, current_user.id):
+        raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+
+    current_categories = {cat.name: cat.id for cat in trip.categories}
+    current_items = set(item.name for item in trip.items)
+
+    for cat in source_trip.categories:
+        if cat.name not in current_categories:
+            new_category = models.Category(name=cat.name, trip_id=trip.id, created_by_id=current_user.id)
+            db.add(new_category)
+            db.flush()
+            current_categories[new_category.name] = new_category.id
+
+    copied, skipped = 0, 0
+    for item in source_trip.items:
+        if item.name not in current_items:
+            category_id = current_categories.get(item.category.name) if item.category else None
+            new_item = models.Item(
+                name=item.name,
+                quantity=item.quantity,
+                note=item.note,
+                is_critical=item.is_critical,
+                trip_id=trip.id,
+                category_id=category_id,
+                created_by_id=current_user.id
+            )
+
+            db.add(new_item)
+            current_items.add(item.name)
+            copied += 1
+        else:
+            skipped += 1
+
+    db.commit()
+
+    return {"copied_items": copied, "skipped_items": skipped, "message": "Копіювання пройшло успішно"}
+
 @router.get("/{trip_id}/categories/", response_model=List[schemas.CategoryResponse])
 @limiter.limit("100/minute")
 def get_categories_for_trip(

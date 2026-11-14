@@ -7,6 +7,7 @@ import TripHeader from './TripHeader.vue'
 import TripParticipants from './TripParticipants.vue'
 import TripItemForm from './TripItemForm.vue'
 import TripItemList from './TripItemList.vue'
+import TripCopyItems from './TripCopyItems.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -127,6 +128,46 @@ const packingPercent = computed(() => {
   if (!total) return 0
   return Math.round(((trip.value?.packed_items || 0) / total) * 100)
 })
+
+// ---- Наслідування речей з минулої поїздки ----
+const showCopyModal = ref(false)
+const copySourceTrips = ref([])
+const isCopyModalLoading = ref(false)
+
+const openCopyModal = async () => {
+  showCopyModal.value = true
+  copySourceTrips.value = []
+  isCopyModalLoading.value = true
+  try {
+    const [active, archived] = await Promise.all([
+      api.get('/trips/?limit=100'),
+      api.get('/trips/?role=archived&limit=100')
+    ])
+    const byId = new Map()
+    ;[...active.items, ...archived.items].forEach(t => {
+      if (t.id != tripId && t.total_items > 0) byId.set(t.id, t)
+    })
+    copySourceTrips.value = [...byId.values()]
+  } catch (error) {
+    toast.error(error.message)
+  } finally {
+    isCopyModalLoading.value = false
+  }
+}
+
+const handleCopyItems = async (sourceTripId) => {
+  try {
+    const res = await api.post(`/trips/${tripId}/copy-items`, { source_trip_id: sourceTripId })
+    showCopyModal.value = false
+    await fetchTripData()
+    const extra = res.skipped_items
+      ? ` Пропущено дублікатів: ${res.skipped_items}.`
+      : ''
+    toast.success(`${res.message} Додано речей: ${res.copied_items}.${extra}`)
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
 
 // Видалення учасника (ТІЛЬКИ ДЛЯ ОРГАНІЗАТОРА)
 const removeParticipant = async (participantId) => {
@@ -482,6 +523,13 @@ onMounted(async () => {
         @add-item="addItem" 
         @create-category="createCategory" 
       />
+
+      <!-- наслідування речей з минулої поїздки -->
+      <div class="copy-trip-section">
+        <button class="copy-trip-btn" @click="openCopyModal">
+          ↩ Наслідувати речі з іншої поїздки
+        </button>
+      </div>
       
       <!-- список речей -->
       <TripItemList 
@@ -498,6 +546,15 @@ onMounted(async () => {
         @unmark-critical="unmarkCritical"
         @rename-category="renameCategory"
         @delete-category="deleteCategory"
+      />
+
+      <!-- модалка наслідування -->
+      <TripCopyItems
+        v-if="showCopyModal"
+        :trips="copySourceTrips"
+        :is-loading="isCopyModalLoading"
+        @close="showCopyModal = false"
+        @copy="handleCopyItems"
       />
     </div>
     
@@ -538,6 +595,24 @@ onMounted(async () => {
   height: 100%;
   border-radius: 8px;
   transition: width 0.3s ease;
+}
+.copy-trip-section {
+  display: flex;
+  margin-bottom: 20px;
+}
+.copy-trip-btn {
+  background: white;
+  color: #3498db;
+  border: 1px dashed #3498db;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+.copy-trip-btn:hover {
+  background: #eaf6ff;
 }
 .access-denied-card {
   background: white;
