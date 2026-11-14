@@ -248,23 +248,48 @@ const renameCategory = async ({ id, name }) => {
   }
 }
 
-// Видалення категорії (тільки організатор або автор) — речі переносяться в "Інше"
-const deleteCategory = async (category) => {
-  const itemCount = items.value.filter(i => i.category_id === category.id).length
+// Видалення категорії (тільки організатор або автор) — речі переносяться в «Інше»
+// або у вибрану категорію через move_to
+const categoryToDelete = ref(null)
+const deleteTargetCategoryId = ref('')
+const isDeletingCategory = ref(false)
 
-  const message = itemCount > 0
-    ? `Видалити категорію "${category.name}"? Речі (${itemCount}) буде перенесено до "Інше".`
-    : `Видалити категорію "${category.name}"?`
+const toDeleteItemCount = computed(() => {
+  const cat = categoryToDelete.value
+  if (!cat) return 0
+  return items.value.filter(i => i.category_id === cat.id).length
+})
 
-  if (!confirm(message)) return
+const otherCategories = computed(() =>
+  (categories.value || []).filter(c => categoryToDelete.value && c.id !== categoryToDelete.value.id)
+)
 
+const askDeleteCategory = (category) => {
+  deleteTargetCategoryId.value = ''
+  categoryToDelete.value = category
+}
+
+const closeDeleteCategory = () => {
+  if (isDeletingCategory.value) return
+  categoryToDelete.value = null
+}
+
+const confirmDeleteCategory = async () => {
+  const category = categoryToDelete.value
+  if (!category) return
+
+  isDeletingCategory.value = true
   try {
-    await api.delete(`/trips/${tripId}/categories/${category.id}`)
-
+    const moveTo = deleteTargetCategoryId.value || null
+    const query = moveTo ? `?move_to=${moveTo}` : ''
+    const res = await api.delete(`/trips/${tripId}/categories/${category.id}${query}`)
+    categoryToDelete.value = null
     await fetchTripData()
-    toast.success('Категорію видалено.')
+    toast.success(res.message || 'Категорію видалено.')
   } catch (error) {
     toast.error(error.message)
+  } finally {
+    isDeletingCategory.value = false
   }
 }
 
@@ -557,8 +582,36 @@ onMounted(async () => {
         @move-item="moveItem"
         @unmark-critical="unmarkCritical"
         @rename-category="renameCategory"
-        @delete-category="deleteCategory"
+        @delete-category="askDeleteCategory"
       />
+
+      <!-- модалка видалення категорії -->
+      <div v-if="categoryToDelete" class="modal-overlay" @click.self="closeDeleteCategory">
+        <div class="delete-cat-modal">
+          <h3>Видалити категорію «{{ categoryToDelete.name }}»?</h3>
+          <p class="hint">
+            <template v-if="toDeleteItemCount > 0">
+              Речей у категорії: {{ toDeleteItemCount }}. Оберіть, куди їх перенести.
+            </template>
+            <template v-else>У категорії немає речей.</template>
+          </p>
+          <label v-if="toDeleteItemCount > 0" class="move-select">
+            <span>Перенести речі до:</span>
+            <select v-model="deleteTargetCategoryId">
+              <option value="">«Інше» (без категорії)</option>
+              <option v-for="c in otherCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button class="btn-cancel" :disabled="isDeletingCategory" @click="closeDeleteCategory">
+              Скасувати
+            </button>
+            <button class="btn-danger" :disabled="isDeletingCategory" @click="confirmDeleteCategory">
+              {{ isDeletingCategory ? 'Видалення...' : 'Видалити' }}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- модалка наслідування -->
       <TripCopyItems
@@ -625,6 +678,78 @@ onMounted(async () => {
 }
 .copy-trip-btn:hover {
   background: #eaf6ff;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.delete-cat-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  width: min(440px, 92vw);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+.delete-cat-modal h3 {
+  margin: 0 0 8px;
+  color: #2c3e50;
+}
+.delete-cat-modal .hint {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: #7f8c8d;
+}
+.move-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: #34495e;
+}
+.move-select select {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 14px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.btn-cancel {
+  background: #ecf0f1;
+  color: #34495e;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-cancel:hover:not(:disabled) {
+  background: #dde3e7;
+}
+.btn-danger {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: #c0392b;
+}
+.modal-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .access-denied-card {
   background: white;

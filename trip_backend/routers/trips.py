@@ -445,6 +445,7 @@ def unarchive_trip(
 def delete_category(
     trip_id: int,
     category_id: int,
+    move_to: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -465,11 +466,29 @@ def delete_category(
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
 
+    target_category = None
+    if move_to is not None:
+        if move_to == category_id:
+            raise HTTPException(status_code=400, detail="Не можна перенести речі в категорію, яку зараз видаляєш")
+        
+        target_category = (
+            db.query(models.Category)
+            .filter(
+                models.Category.id == move_to,
+                models.Category.trip_id == trip.id
+            )
+            .first()
+        )
+
+        if not target_category:
+            raise HTTPException(status_code=400, detail="Категорію не знайдено")
+
     category_name = category.name
     items_moved = db.query(models.Item).filter(models.Item.category_id == category.id).count()
 
     db.query(models.Item).filter(models.Item.category_id == category.id).update(
-        {models.Item.category_id: None}
+        {models.Item.category_id: move_to},
+        synchronize_session=False
     )
     try:
         db.delete(category)
@@ -478,7 +497,9 @@ def delete_category(
         db.rollback()
         raise HTTPException(status_code=409, detail="Категорію неможливо видалити, спробуйте ще раз")
 
-    if items_moved:
+    if items_moved and target_category is not None:
+        return {"message": f"Категорію '{category_name}' видалено. Речей перенесено до «{target_category.name}»: {items_moved}"}
+    elif items_moved:
         return {"message": f"Категорію '{category_name}' видалено. Речей перенесено до «Інше»: {items_moved}"}
     return {"message": f"Категорію '{category_name}' видалено"}
 
