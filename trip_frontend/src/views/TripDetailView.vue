@@ -369,6 +369,17 @@ const unmarkCritical = async (item) => {
   }
 }
 
+// Перенесення речі в іншу категорію через drag & drop (тільки організатор або автор речі)
+const moveItem = async ({ itemId, categoryId }) => {
+  try {
+    await api.patch(`/items/${itemId}`, { category_id: categoryId })
+    await fetchTripData()
+    toast.success('Річ переміщено.')
+  } catch (error) {
+    toast.error(error.message)
+  }
+}
+
 // Перейменування речі (тільки організатор або автор речі)
 const renameItem = async ({ id, name }) => {
   if (!name || name.trim().length < 2) {
@@ -543,6 +554,7 @@ onMounted(async () => {
         @delete="deleteItem"
         @rename="renameItem"
         @update-quantity="updateItemQuantity"
+        @move-item="moveItem"
         @unmark-critical="unmarkCritical"
         @rename-category="renameCategory"
         @delete-category="deleteCategory"

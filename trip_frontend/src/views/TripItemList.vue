@@ -9,7 +9,7 @@ const props = defineProps({
   ownerUsername: { type: String, required: false }
 })
 
-const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other', 'update-my-quantity'])
+const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other', 'update-my-quantity', 'move-item'])
 
 // Стан редагування назви речі
 const editingId = ref(null)
@@ -165,11 +165,49 @@ const getCategoryProgress = (items = []) => {
   const total = items.reduce((s, item) => s + (item.quantity || 0), 0)
   return `${packed}/${total}`
 }
+
+// ---- Drag & drop: перенесення речей між категоріями ----
+// Переміщати річ може лише організатор або її автор (як і зміна категорії на бекенді)
+const draggingId = ref(null)
+const dragOverGroup = ref('')
+
+const findItemById = (id) =>
+  Object.values(props.groupedItems).flat().find(i => i.id === id)
+
+const canDragItem = (item) => canModifyItem(item) && !isEditing(item)
+
+const onDragStart = (item, event) => {
+  if (!canDragItem(item)) {
+    event.preventDefault()
+    return
+  }
+  draggingId.value = item.id
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(item.id))
+}
+
+const onDragEnd = () => {
+  draggingId.value = null
+  dragOverGroup.value = ''
+}
+
+const isDropTargetActive = (categoryName) =>
+  dragOverGroup.value === categoryName && draggingId.value !== null
+
+const onDropOnCategory = (categoryName) => {
+  const item = findItemById(draggingId.value)
+  const targetId = catFor(categoryName) ? catFor(categoryName).id : null
+  if (item && targetId !== item.category_id) {
+    emit('move-item', { itemId: item.id, categoryId: targetId })
+  }
+  onDragEnd()
+}
 </script>
 
 <template>
   <div class="items-section">
     <h3>Список речей</h3>
+    <div class="drag-hint">💡 Перетягніть річ у іншу категорію, щоб перемістити її (може організатор або автор речі).</div>
 
     <!-- Якщо немає жодної категорії в згрупованих речах, значить список порожній -->
     <div v-if="Object.keys(groupedItems).length === 0" class="empty">
@@ -209,7 +247,15 @@ const getCategoryProgress = (items = []) => {
         За вашими фільтрами нічого не знайдено.
       </div>
 
-      <div v-for="(items, categoryName) in filteredGroups" :key="categoryName" class="category-group">
+      <div
+        v-for="(items, categoryName) in filteredGroups"
+        :key="categoryName"
+        class="category-group"
+        :class="{ 'drag-over': isDropTargetActive(categoryName) }"
+        @dragover.prevent="dragOverGroup = categoryName"
+        @dragleave="dragOverGroup === categoryName && (dragOverGroup = '')"
+        @drop.prevent="onDropOnCategory(categoryName)"
+      >
         <div class="category-header">
           <h3 class="category-title">{{ categoryName }}: {{ getCategoryProgress(props.groupedItems[categoryName] || []) }}</h3>
           <div v-if="catFor(categoryName)" class="category-actions">
@@ -251,7 +297,15 @@ const getCategoryProgress = (items = []) => {
           </div>
         </div>
         <ul class="items-list">
-          <li v-for="item in items" :key="item.id" class="item-row">
+          <li
+            v-for="item in items"
+            :key="item.id"
+            class="item-row"
+            :class="{ draggable: canDragItem(item), dragging: draggingId === item.id }"
+            :draggable="canDragItem(item)"
+            @dragstart="onDragStart(item, $event)"
+            @dragend="onDragEnd"
+          >
 
             <!-- Ліва частина речі (чекбокс і ім'я) -->
             <div class="item-content">
@@ -438,6 +492,18 @@ const getCategoryProgress = (items = []) => {
 }
 .category-group {
   margin-bottom: 20px;
+  border-radius: 8px;
+  transition: background-color 0.15s, outline 0.15s;
+}
+.category-group.drag-over {
+  background-color: #eafaf1;
+  outline: 2px dashed #42b883;
+  outline-offset: 4px;
+}
+.drag-hint {
+  font-size: 13px;
+  color: #95a5a6;
+  margin: -6px 0 14px;
 }
 .category-header {
   display: flex;
@@ -491,6 +557,16 @@ const getCategoryProgress = (items = []) => {
   align-items: center;
   padding: 10px 12px;
   border-bottom: 1px solid #eee;
+  transition: opacity 0.15s;
+}
+.item-row.draggable {
+  cursor: grab;
+}
+.item-row.draggable:active {
+  cursor: grabbing;
+}
+.item-row.dragging {
+  opacity: 0.35;
 }
 .item-row:last-child {
   border-bottom: none;

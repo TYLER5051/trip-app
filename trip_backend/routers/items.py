@@ -90,7 +90,7 @@ def update_item(
         value is not None
         for value in (item_update.name, item_update.quantity, item_update.note,
                       item_update.is_critical, item_update.category_id)
-    )
+    ) or "category_id" in item_update.model_fields_set
     if content_changed:
         if trip.owner_id != current_user.id and item.created_by_id != current_user.id:
             raise HTTPException(
@@ -122,16 +122,19 @@ def update_item(
         if item_update.is_critical is not None:
             item.is_critical = item_update.is_critical
 
-        if item_update.category_id is not None:
-            new_category = db.get(models.Category, item_update.category_id)
-            if new_category is None:
-                raise HTTPException(status_code=404, detail="Категорію не знайдено")
-            if new_category.trip_id != trip.id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Ця категорія належить іншій поїздці"
-                )
-            item.category_id = new_category.id
+        if "category_id" in item_update.model_fields_set:
+            if item_update.category_id is None:
+                item.category_id = None
+            else:
+                new_category = db.get(models.Category, item_update.category_id)
+                if new_category is None:
+                    raise HTTPException(status_code=404, detail="Категорію не знайдено")
+                if new_category.trip_id != trip.id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Ця категорія належить іншій поїздці"
+                    )
+                item.category_id = new_category.id
 
     try:
         db.commit()
