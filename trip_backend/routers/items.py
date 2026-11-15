@@ -78,7 +78,7 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    item = db.get(models.Item, item_id)
+    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
     if item is None:
         raise HTTPException(status_code=404, detail="Річ не знайдено")
 
@@ -279,7 +279,7 @@ def unassign_item(
 
     try:
         db.delete(assignment)
-        log_activity(db, trip.id, current_user.id, "item_unassigned", {"name": item.name})
+        log_activity(db, trip.id, current_user.id, "item_unassigned", {"name": item.name}, item_id=item_id)
         db.commit()
     except IntegrityError:
         db.rollback()

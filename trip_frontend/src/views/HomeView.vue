@@ -1,13 +1,14 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import api from '../services/api'
+import auth from '../stores/auth'
 import TripCard from '../components/TripCard.vue'
 
 const trips = ref([])
 const isLoading = ref(true)
 const isLoadingMore = ref(false)
 const errorMessage = ref('')
-const currentUser = localStorage.getItem('username')
+const currentUser = auth.username
 
 const searchInput = ref('')
 const q = ref('')
@@ -49,7 +50,10 @@ const buildQuery = () => {
   return params.toString()
 }
 
+let tripsSeq = 0
+
 const fetchTrips = async (reset = true) => {
+  const seq = ++tripsSeq
   if (reset) {
     offset.value = 0
     trips.value = []
@@ -61,13 +65,17 @@ const fetchTrips = async (reset = true) => {
 
   try {
     const data = await api.get(`/trips/?${buildQuery()}`)
+    if (seq !== tripsSeq) return
     trips.value = reset ? data.items : [...trips.value, ...data.items]
     total.value = data.total
   } catch (error) {
+    if (seq !== tripsSeq) return
     errorMessage.value = error.message
   } finally {
-    isLoading.value = false
-    isLoadingMore.value = false
+    if (seq === tripsSeq) {
+      isLoading.value = false
+      isLoadingMore.value = false
+    }
   }
 }
 
@@ -118,6 +126,10 @@ const titleTooShort = computed(() => {
 
 onMounted(() => {
   fetchTrips()
+})
+
+onUnmounted(() => {
+  clearTimeout(searchTimer)
 })
 </script>
 

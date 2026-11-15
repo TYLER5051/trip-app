@@ -118,7 +118,7 @@ class TripCreate(TripBase):
     pass
 
 class TripUpdate(TripBase):
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=3, max_length=100)
     model_config = ConfigDict(str_strip_whitespace=True)
 
 class TripDetailResponse(TripBase):

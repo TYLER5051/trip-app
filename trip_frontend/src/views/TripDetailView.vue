@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue3-toastify'
 import api from '../services/api'
@@ -39,6 +39,10 @@ watch(itemSearchInput, () => {
     itemQ.value = itemSearchInput.value.trim()
     fetchItems()
   }, 300)
+})
+
+onUnmounted(() => {
+  clearTimeout(itemSearchTimer)
 })
 
 // race-guard: якщо користувач швидко ввів новий пошук або змінив дані,

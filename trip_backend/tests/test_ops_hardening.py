@@ -163,3 +163,50 @@ def test_concurrent_join_same_invite_multiple_users(client, auth_headers):
     t2.join()
 
     assert sorted(results.values()) == [200, 200]
+
+
+def test_concurrent_quantity_update_vs_assign_invariant(client, auth_headers):
+    """Інваріант «розібрано <= quantity» не ламається при одночасних
+    update_item(quantity) та assign_item: with_for_update серіалізує обидва
+    запити на рядку речі, тож рівно один переможе, інший отримає 400,
+    а в кінцевому стані сума призначень не перевищує quantity."""
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Каремат", quantity=5)
+
+    results = {}
+    barrier = threading.Barrier(2)
+
+    def try_patch_quantity():
+        with TestClient(main.app) as c:
+            barrier.wait(timeout=5)
+            results["patch"] = c.patch(
+                f"/items/{item['id']}",
+                json={"quantity": 1},
+                headers=org,
+            ).status_code
+
+    def try_assign():
+        with TestClient(main.app) as c:
+            barrier.wait(timeout=5)
+            results["assign"] = c.post(
+                f"/items/{item['id']}/assign",
+                json={"quantity": 5},
+                headers=u1,
+            ).status_code
+
+    t1 = threading.Thread(target=try_patch_quantity)
+    t2 = threading.Thread(target=try_assign)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # quantity=1 і assign=5 несумісні: хто першим став на лок — виграє (200),
+    # другий обов'язково відхиляється (400). Обидва успішними бути не можуть.
+    assert {results["patch"], results["assign"]} == {200, 400}
+
+    # Пост-перевірка збереженого стану: quantity >= суми призначень.
+    items_data = client.get(f"/trips/{trip_id}/items/?limit=100", headers=org).json()["items"]
+    fresh = next(i for i in items_data if i["id"] == item["id"])
+    assigned = sum(a["quantity"] for a in fresh["assignments"])
+    assert fresh["quantity"] >= assigned

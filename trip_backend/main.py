@@ -3,6 +3,7 @@ import os
 import time
 import uuid
 import models
+import re
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -50,11 +51,12 @@ async def request_id_logging(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
+    path = re.sub(r"(/invite/)[^/]+", r"\1***", request.url.path)
     logger.info(
         "%s %s %s -> %s (%.1fms)",
         request_id,
         request.method,
-        request.url.path,
+        path,
         response.status_code,
         duration_ms,
     )

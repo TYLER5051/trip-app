@@ -387,14 +387,15 @@ def transfer_owner(
     current_user: models.User = Depends(get_current_user)
 ):
     trip = (
-            db.query(models.Trip)
-            .options(
-                selectinload(models.Trip.owner),
-                selectinload(models.Trip.participants)
-            )
-            .filter(models.Trip.id == trip_id)
-            .first()
+        db.query(models.Trip)
+        .options(
+            selectinload(models.Trip.owner),
+            selectinload(models.Trip.participants)
         )
+        .filter(models.Trip.id == trip_id)
+        .with_for_update()
+        .first()
+    )
     if not trip:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
@@ -464,7 +465,7 @@ def delete_category(
         if not user_is_member(db, trip, current_user.id):
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if category.created_by_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні категорії (створені вами)")
 
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
