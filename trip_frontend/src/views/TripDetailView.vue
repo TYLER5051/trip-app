@@ -8,10 +8,13 @@ import TripParticipants from './TripParticipants.vue'
 import TripItemForm from './TripItemForm.vue'
 import TripItemList from './TripItemList.vue'
 import TripCopyItems from './TripCopyItems.vue'
+import ActivityFeed from '../components/ActivityFeed.vue'
 
 const route = useRoute()
 const router = useRouter()
 const tripId = route.params.id
+const historyVersion = ref(0)
+const activeTab = ref('items')
 
 const trip = ref(null)
 const categories = ref([])
@@ -80,6 +83,7 @@ const fetchTripData = async () => {
     trip.value = tripData
     categories.value = catsData
     await fetchItems()
+    historyVersion.value += 1
   } catch (error) {
     if (error.status === 403 || error.status === 404) {
       accessError.value = true
@@ -333,6 +337,7 @@ const toggleItemAssignment = async (item) => {
     fetchItems()
   ])
   trip.value = freshTrip
+  historyVersion.value += 1
 }
 
 // Зміна своєї кількості через степер (лише для своєї позначки)
@@ -345,6 +350,7 @@ const changeMyQuantity = async ({ itemId, quantity }) => {
   }
   const [freshTrip] = await Promise.all([api.get(`/trips/${tripId}`), fetchItems()])
   trip.value = freshTrip
+  historyVersion.value += 1
 }
 
 // Зняти річ, яку взяв інший учасник, — доступно тільки організатору поїздки
@@ -362,6 +368,7 @@ const unassignOther = async ({ item, user }) => {
     fetchItems()
   ])
   trip.value = freshTrip
+  historyVersion.value += 1
 }
 
 // Зміна кількості після створення (тільки автор або організатор)
@@ -553,37 +560,61 @@ onMounted(async () => {
         @transfer="transferOwnership"
       />
       
-      <!-- додавання речей-->
-      <TripItemForm 
-        :categories="categories" 
-        @add-item="addItem" 
-        @create-category="createCategory" 
-      />
-
-      <!-- наслідування речей з минулої поїздки -->
-      <div class="copy-trip-section">
-        <button class="copy-trip-btn" @click="openCopyModal">
-          ↩ Наслідувати речі з іншої поїздки
+      <!-- вкладки: Речі / Історія -->
+      <div class="trip-tabs">
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'items' }"
+          @click="activeTab = 'items'"
+        >
+          Речі
+        </button>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'history' }"
+          @click="activeTab = 'history'"
+        >
+          Історія
         </button>
       </div>
-      
-      <!-- список речей -->
-      <TripItemList 
-        :groupedItems="groupedItems"
-        :categories="categories"
-        :currentUser="currentUser"
-        :ownerUsername="trip.owner?.username"
-        @toggle="toggleItemAssignment"
-        @unassign-other="unassignOther"
-        @update-my-quantity="changeMyQuantity"
-        @delete="deleteItem"
-        @rename="renameItem"
-        @update-quantity="updateItemQuantity"
-        @move-item="moveItem"
-        @unmark-critical="unmarkCritical"
-        @rename-category="renameCategory"
-        @delete-category="askDeleteCategory"
-      />
+
+      <div v-if="activeTab === 'items'">
+        <!-- додавання речей-->
+        <TripItemForm
+          :categories="categories"
+          @add-item="addItem"
+          @create-category="createCategory"
+        />
+
+        <!-- наслідування речей з минулої поїздки -->
+        <div class="copy-trip-section">
+          <button class="copy-trip-btn" @click="openCopyModal">
+            ↩ Наслідувати речі з іншої поїздки
+          </button>
+        </div>
+
+        <!-- список речей -->
+        <TripItemList
+          :groupedItems="groupedItems"
+          :categories="categories"
+          :currentUser="currentUser"
+          :ownerUsername="trip.owner?.username"
+          @toggle="toggleItemAssignment"
+          @unassign-other="unassignOther"
+          @update-my-quantity="changeMyQuantity"
+          @delete="deleteItem"
+          @rename="renameItem"
+          @update-quantity="updateItemQuantity"
+          @move-item="moveItem"
+          @unmark-critical="unmarkCritical"
+          @rename-category="renameCategory"
+          @delete-category="askDeleteCategory"
+        />
+      </div>
+
+      <div v-else class="history-card">
+        <ActivityFeed :trip-id="Number(tripId)" :refresh-key="historyVersion" />
+      </div>
 
       <!-- модалка видалення категорії -->
       <div v-if="categoryToDelete" class="modal-overlay" @click.self="closeDeleteCategory">
@@ -661,9 +692,43 @@ onMounted(async () => {
   border-radius: 8px;
   transition: width 0.3s ease;
 }
+.trip-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.tab-btn {
+  background: white;
+  border: 1px solid #e1e8ed;
+  color: #34495e;
+  padding: 9px 22px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.tab-btn.active {
+  background: #42b883;
+  border-color: #42b883;
+  color: white;
+}
+.tab-btn:hover:not(.active) {
+  border-color: #42b883;
+}
 .copy-trip-section {
   display: flex;
   margin-bottom: 20px;
+}
+.history-card {
+  background: white;
+  border-radius: 10px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  margin-top: 20px;
+}
+.history-card h3 {
+  margin: 0 0 8px;
+  color: #34495e;
 }
 .copy-trip-btn {
   background: white;

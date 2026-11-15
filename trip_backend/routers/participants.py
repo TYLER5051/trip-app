@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, select
 from database import get_db
 from deps import get_current_user, user_is_member, get_owned_trip
 from rate_limit import limiter
+from activity_log import log_activity
 import models, schemas
 import secrets
 router = APIRouter(prefix="/trips")
@@ -49,6 +50,7 @@ def join_by_invite_token(
 
     try:
         trip.participants.append(current_user)
+        log_activity(db, trip.id, current_user.id, "participant_joined", {"username": current_user.username})
         db.commit()
     except IntegrityError:
         db.rollback()

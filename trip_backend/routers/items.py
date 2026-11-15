@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from deps import get_current_user, user_is_member
+from activity_log import log_activity
 import models, schemas
 
 router = APIRouter(prefix="/items")
@@ -50,6 +51,8 @@ def create_item(
     )
     db.add(db_item)
     try:
+        db.flush()
+        log_activity(db, trip.id, current_user.id, "item_created", {"name": db_item.name, "quantity": db_item.quantity}, db_item.id, db_item.category_id)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -123,8 +126,10 @@ def update_item(
             item.is_critical = item_update.is_critical
 
         if "category_id" in item_update.model_fields_set:
+            old_category_name = item.category.name if item.category else None
             if item_update.category_id is None:
                 item.category_id = None
+                new_category_name = None
             else:
                 new_category = db.get(models.Category, item_update.category_id)
                 if new_category is None:
@@ -135,6 +140,18 @@ def update_item(
                         detail="Ця категорія належить іншій поїздці"
                     )
                 item.category_id = new_category.id
+                new_category_name = new_category.name
+
+            if old_category_name != new_category_name:
+                log_activity(
+                    db, trip.id, current_user.id, "item_moved",
+                    {
+                        "name": item.name,
+                        "from": old_category_name or "Інше",
+                        "to": new_category_name or "Інше",
+                    },
+                    item.id, item.category_id,
+                )
 
     try:
         db.commit()
@@ -201,6 +218,7 @@ def assign_item(
 
     try:
         db.add(assignment)
+        log_activity(db, trip.id, current_user.id, "item_assigned", {"name": item.name, "quantity": assignment.quantity})
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -261,6 +279,7 @@ def unassign_item(
 
     try:
         db.delete(assignment)
+        log_activity(db, trip.id, current_user.id, "item_unassigned", {"name": item.name})
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -306,6 +325,7 @@ def delete_item(
             raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
 
     try:
+        log_activity(db, trip.id, current_user.id, "item_deleted", {"name": item.name, "quantity": item.quantity}, item.id, item.category_id)
         db.delete(item)
         db.commit()
     except IntegrityError:

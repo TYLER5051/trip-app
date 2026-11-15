@@ -9,7 +9,7 @@ const props = defineProps({
 })
 
 const letter = computed(() => (props.username?.[0] || '?').toUpperCase())
-const background = computed(() => avatarBackground(props.color))
+const background = computed(() => avatarBackground(props.color, props.username))
 </script>
 
 <template>

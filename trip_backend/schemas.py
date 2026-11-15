@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from typing import List, Optional
-from datetime import date
+import datetime
+import json
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=30)
@@ -99,8 +100,8 @@ class CopyItemResponse(BaseModel):
 
 class TripBase(BaseModel):
     title: str = Field(min_length=3, max_length=100)
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None
     model_config = ConfigDict(str_strip_whitespace=True)
 
     @model_validator(mode="after")
@@ -177,3 +178,30 @@ class TransferOwnerRequest(BaseModel):
 
 class DeleteAccountRequest(BaseModel):
     current_password: str
+
+class ActivityResponse(BaseModel):
+    id: int
+    action: str
+    actor: Optional[UserResponse]
+    trip_id: int
+    trip: TripShortResponse
+    item_id: Optional[int]
+    category_id: Optional[int]
+    details: Optional[dict] = None
+    created_at: datetime.datetime
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def to_json(cls, d):
+        if isinstance(d, str):
+            try:
+                return json.loads(d)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return d
+class ActivityListResponse(BaseModel):
+    items: List[ActivityResponse]
+    total: int
+    limit: int
+    offset: int

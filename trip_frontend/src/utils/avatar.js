@@ -6,6 +6,14 @@ export const AVATAR_COLORS = [
 
 export const DEFAULT_AVATAR_COLOR = AVATAR_COLORS[0]
 
-export function avatarBackground(color) {
-  return color && AVATAR_COLORS.includes(color) ? color : DEFAULT_AVATAR_COLOR
+export function avatarBackground(color, seed) {
+  if (color && AVATAR_COLORS.includes(color)) return color
+  if (seed) {
+    let hash = 0
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
+    }
+    return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+  }
+  return DEFAULT_AVATAR_COLOR
 }

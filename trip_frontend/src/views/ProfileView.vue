@@ -5,6 +5,7 @@ import api from '../services/api'
 import auth from '../stores/auth'
 import TripCard from '../components/TripCard.vue'
 import UserAvatar from '../components/UserAvatar.vue'
+import ActivityFeed from '../components/ActivityFeed.vue'
 import { AVATAR_COLORS } from '../utils/avatar'
 
 const router = useRouter()
@@ -322,6 +323,11 @@ onMounted(() => {
           <div class="stat-number">{{ profile?.assigned_items_count ?? 0 }}</div>
           <div class="stat-label">Доручених речей</div>
         </div>
+      </div>
+
+      <div class="password-card">
+        <h3>🕓 Останні дії</h3>
+        <ActivityFeed />
       </div>
 
       <div class="assigned-card">

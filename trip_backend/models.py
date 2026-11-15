@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
+from datetime import datetime, timezone
 
 trip_users = Table(
     "trip_users",
@@ -86,3 +87,18 @@ class ItemAssignment(Base):
 
     user = relationship("User")
     item = relationship("Item", back_populates="assignments")
+
+class Activity(Base):
+    __tablename__ = "activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String, nullable=False)
+    details = Column(String, nullable=True)
+    item_id  = Column(Integer, ForeignKey("items.id", ondelete="SET NULL"))
+    category_id  = Column(Integer, ForeignKey("categories.id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), index=True)
+
+    trip = relationship("Trip")
+    actor = relationship("User")

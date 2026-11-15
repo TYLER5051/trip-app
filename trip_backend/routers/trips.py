@@ -7,6 +7,7 @@ from database import get_db
 from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member
 from rate_limit import limiter
 from typing import List, Optional
+from activity_log import log_activity
 import models, schemas
 import secrets
 
@@ -51,6 +52,8 @@ def create_trip(
     )
 
     db.add(db_trip)
+    db.flush()
+    log_activity(db, db_trip.id, current_user.id, "trip_created", {"title": db_trip.title})
     db.commit()
 
     created = (
@@ -492,6 +495,7 @@ def delete_category(
     )
     try:
         db.delete(category)
+        log_activity(db, trip_id, current_user.id, "category_deleted", {"name": category_name, "items_moved": items_moved}, category_id=category.id)
         db.commit()
     except IntegrityError:
         db.rollback()
