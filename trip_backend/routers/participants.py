@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import delete, func, select
 from database import get_db
-from deps import get_current_user, user_is_member, get_owned_trip
+from deps import get_current_user, user_is_member, get_owned_trip, ensure_active_trip
 from rate_limit import limiter
 from activity_log import log_activity
 import models, schemas
@@ -13,7 +13,9 @@ router = APIRouter(prefix="/trips")
 
 
 @router.get("/{trip_id}/invite", response_model=schemas.InviteTokenResponse)
+@limiter.limit("60/minute")
 def get_invite_token(
+    request: Request,
     trip_id: int,
     trip: models.Trip = Depends(get_owned_trip)
 ):
@@ -21,11 +23,14 @@ def get_invite_token(
 
 
 @router.post("/{trip_id}/invite", response_model=schemas.InviteTokenResponse)
+@limiter.limit("60/minute")
 def rotate_invite_token(
+    request: Request,
     trip_id: int,
     db: Session = Depends(get_db),
     trip: models.Trip = Depends(get_owned_trip)
 ):
+    ensure_active_trip(trip)
     trip.invite_token = secrets.token_urlsafe(32)
     trip.invite_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     db.commit()
@@ -33,7 +38,9 @@ def rotate_invite_token(
 
 
 @router.post("/invite/{token}")
+@limiter.limit("60/minute")
 def join_by_invite_token(
+    request: Request,
     token: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -41,6 +48,8 @@ def join_by_invite_token(
     trip = db.query(models.Trip).filter(models.Trip.invite_token == token).first()
     if trip is None or (trip.invite_expires_at is not None and trip.invite_expires_at < datetime.now(timezone.utc)):
         raise HTTPException(status_code=404, detail="Інвайт-токен недійсний")
+
+    ensure_active_trip(trip)
 
     if trip.owner_id == current_user.id:
         raise HTTPException(status_code=400, detail="Ви вже є організатором цієї поїздки")
@@ -100,12 +109,15 @@ def preview_invite(
 
 
 @router.delete("/{trip_id}/participants/{user_id}")
+@limiter.limit("60/minute")
 def remove_participant(
+    request: Request,
     trip_id: int,
     user_id: int,
     db: Session = Depends(get_db),
     trip: models.Trip = Depends(get_owned_trip)
 ):
+    ensure_active_trip(trip)
     user_to_remove = db.get(models.User, user_id)
     if not user_to_remove or not user_is_member(db, trip, user_to_remove.id):
         raise HTTPException(status_code=404, detail="Учасника не знайдено в цій поїздці")
@@ -133,7 +145,9 @@ def remove_participant(
     return {"message": "Учасника успішно видалено, а його речі звільнено"}
 
 @router.delete("/{trip_id}/leave")
+@limiter.limit("60/minute")
 def leave_trip(
+    request: Request,
     trip_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)

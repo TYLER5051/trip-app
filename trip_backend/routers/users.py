@@ -10,7 +10,9 @@ import auth, models, schemas
 router = APIRouter(prefix="/users")
 
 @router.get("/me", response_model=schemas.UserMeResponse)
+@limiter.limit("10/minute")
 def get_user(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -57,7 +59,9 @@ def get_user(
     }
 
 @router.get("/me/assigned-items", response_model=schemas.AssignedItemsListResponse)
+@limiter.limit("10/minute")
 def get_assigned_items(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -129,7 +133,9 @@ def change_password(
     return {"username": current_user.username, "access_token": access_token, "token_type": "bearer"}
 
 @router.delete("/me")
+@limiter.limit("10/minute")
 def delete_account(
+    request: Request,
     delete_request: schemas.DeleteAccountRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)

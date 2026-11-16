@@ -6,7 +6,8 @@ import api from '../services/api'
 const props = defineProps({
   trip: { type: Object, required: true },
   currentUser: { type: String, required: true },
-  isParticipant: { type: Boolean, required: true }
+  isParticipant: { type: Boolean, required: true },
+  isArchived: { type: Boolean, required: false, default: false }
 })
 
 const emit = defineEmits(['leave', 'delete', 'rename', 'archive', 'unarchive', 'change-dates'])
@@ -112,7 +113,7 @@ const saveDates = () => {
     </h1>
     <div class="trip-dates-row">
       <p v-if="tripDates" class="trip-dates">📅 {{ tripDates }}</p>
-      <button v-if="isOwner && !isEditingDates" class="edit-dates-btn" @click="startEditDates">Змінити дати</button>
+      <button v-if="isOwner && !isEditingDates && !isArchived" class="edit-dates-btn" @click="startEditDates">Змінити дати</button>
 
       <div v-if="isEditingDates" class="dates-form">
         <label class="dates-field">
@@ -143,17 +144,17 @@ const saveDates = () => {
       
       <!-- Кнопка видалення поїздки для організатора -->
       <button 
-        v-if="trip.owner?.username === currentUser" 
+        v-if="trip.owner?.username === currentUser && !isArchived" 
         @click="emit('delete')" 
         class="delete-trip-btn"
       >
         Видалити поїздку
       </button>
 
-      <button v-if="trip.owner?.username === currentUser" @click="copyInviteLink" class="copy-link-btn">
+      <button v-if="trip.owner?.username === currentUser && !isArchived" @click="copyInviteLink" class="copy-link-btn">
         Скопіювати інвайт-посилання
       </button>
-      <button v-if="trip.owner?.username === currentUser" @click="rotateInviteLink" class="rotate-invite-btn">
+      <button v-if="trip.owner?.username === currentUser && !isArchived" @click="rotateInviteLink" class="rotate-invite-btn">
         Нове інвайт-посилання
       </button>
 
@@ -171,7 +172,7 @@ const saveDates = () => {
 
       <!-- Перейменування поїздки (тільки організатор) -->
       <button 
-        v-if="trip.owner?.username === currentUser" 
+        v-if="trip.owner?.username === currentUser && !isArchived" 
         @click="isEditingTitle = true; newTitle = trip.title" 
         class="rename-trip-btn"
       >

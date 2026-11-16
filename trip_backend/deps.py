@@ -85,3 +85,9 @@ def get_owned_trip(
     if trip.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Тільки організатор має доступ")
     return trip
+
+def ensure_active_trip(
+    trip: models.Trip
+):
+    if trip.is_archived:
+        raise HTTPException(status_code=400, detail="Поїздку архівовано — зміни недоступні")

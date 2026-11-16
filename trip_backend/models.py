@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
@@ -90,6 +90,7 @@ class ItemAssignment(Base):
 
 class Activity(Base):
     __tablename__ = "activities"
+    __table_args__ = (Index("ix_activities_trip_created", "trip_id", "created_at"),)
 
     id = Column(Integer, primary_key=True, index=True)
     trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)

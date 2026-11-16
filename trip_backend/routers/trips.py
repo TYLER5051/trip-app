@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
-from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member
+from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member, ensure_active_trip
 from rate_limit import limiter
 from typing import List, Optional
 from activity_log import log_activity
@@ -37,7 +37,9 @@ def _stats_for_trip(db: Session, trip_id: int):
     return total_items, packed_items or 0
 
 @router.post("/", response_model=schemas.TripDetailResponse)
+@limiter.limit("30/minute")
 def create_trip(
+    request: Request,
     trip: schemas.TripCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -177,13 +179,16 @@ def get_trip(
     return trip
 
 @router.post("/{trip_id}/categories/", response_model=schemas.CategoryResponse)
+@limiter.limit("30/minute")
 def create_category_for_trip(
+    request: Request,
     trip_id: int,
     category: schemas.CategoryCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     trip: models.Trip = Depends(get_accessible_trip)
 ):
+    ensure_active_trip(trip)
     existing_cat = db.query(models.Category).filter(
         models.Category.name == category.name,
         models.Category.trip_id == trip_id
@@ -202,12 +207,15 @@ def create_category_for_trip(
     return new_cat
 
 @router.patch("/{trip_id}", response_model=schemas.TripDetailResponse)
+@limiter.limit("30/minute")
 def update_trip(
+    request: Request,
     trip_id: int,
     trip_update: schemas.TripUpdate,
     db: Session = Depends(get_db),
     trip: models.Trip = Depends(get_owned_trip)
 ):
+    ensure_active_trip(trip)
     new_start = trip_update.start_date if "start_date" in trip_update.model_fields_set else trip.start_date
     new_end = trip_update.end_date if "end_date" in trip_update.model_fields_set else trip.end_date
     if new_start is not None and new_end is not None and new_start > new_end:
@@ -228,13 +236,16 @@ def update_trip(
     return trip
 
 @router.post("/{trip_id}/copy-items", response_model=schemas.CopyItemResponse)
+@limiter.limit("30/minute")
 def copy_trip(
+    request: Request,
     trip_id: int,
     copy_request: schemas.CopyItemRequest,
     trip: models.Trip = Depends(get_accessible_trip),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    ensure_active_trip(trip)
     if copy_request.source_trip_id == trip_id:
         raise HTTPException(status_code=400, detail="Не можна копіювати речі з цієї ж поїздки")
 
@@ -338,7 +349,9 @@ def get_trip_items(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 @router.patch("/{trip_id}/categories/{category_id}", response_model=schemas.CategoryResponse)
+@limiter.limit("30/minute")
 def update_categories_for_trip(
+    request: Request,
     trip_id: int,
     category_id: int,
     category_update: schemas.CategoryUpdate,
@@ -358,6 +371,8 @@ def update_categories_for_trip(
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if category.created_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
+    ensure_active_trip(trip)
 
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
@@ -380,7 +395,9 @@ def update_categories_for_trip(
     return category
 
 @router.patch("/{trip_id}/transfer-owner", response_model=schemas.TripDetailResponse)
+@limiter.limit("30/minute")
 def transfer_owner(
+    request: Request,
     trip_id: int,
     transfer_request: schemas.TransferOwnerRequest,
     db: Session = Depends(get_db),
@@ -401,6 +418,8 @@ def transfer_owner(
 
     if current_user.id != trip.owner_id:
         raise HTTPException(status_code=403, detail="Тільки організатор може передавати права")
+
+    ensure_active_trip(trip)
 
     if transfer_request.new_owner_id == current_user.id:
         raise HTTPException(status_code=400, detail="Ви вже є організатором")
@@ -424,7 +443,9 @@ def transfer_owner(
     return trip
 
 @router.post("/{trip_id}/archive", response_model=schemas.TripDetailResponse)
+@limiter.limit("30/minute")
 def archive_trip(
+    request: Request,
     trip: models.Trip = Depends(get_owned_trip),
     db: Session = Depends(get_db)
 ):
@@ -435,7 +456,9 @@ def archive_trip(
     return trip
 
 @router.post("/{trip_id}/unarchive", response_model=schemas.TripDetailResponse)
+@limiter.limit("30/minute")
 def unarchive_trip(
+    request: Request,
     trip: models.Trip = Depends(get_owned_trip),
     db: Session = Depends(get_db)
 ):
@@ -446,7 +469,9 @@ def unarchive_trip(
     return trip
     
 @router.delete("/{trip_id}/categories/{category_id}")
+@limiter.limit("30/minute")
 def delete_category(
+    request: Request,
     trip_id: int,
     category_id: int,
     move_to: Optional[int] = None,
@@ -466,6 +491,8 @@ def delete_category(
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if category.created_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні категорії (створені вами)")
+
+    ensure_active_trip(trip)
 
     if category.trip_id != trip_id:
         raise HTTPException(status_code=400, detail="Ця категорія не належить вказаній поїздці")
@@ -509,7 +536,9 @@ def delete_category(
     return {"message": f"Категорію '{category_name}' видалено"}
 
 @router.delete("/{trip_id}")
+@limiter.limit("30/minute")
 def delete_trip(
+    request: Request,
     trip_id: int, 
     db: Session = Depends(get_db),
     trip: models.Trip = Depends(get_owned_trip)

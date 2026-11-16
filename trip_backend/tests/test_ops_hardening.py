@@ -210,3 +210,50 @@ def test_concurrent_quantity_update_vs_assign_invariant(client, auth_headers):
     fresh = next(i for i in items_data if i["id"] == item["id"])
     assigned = sum(a["quantity"] for a in fresh["assignments"])
     assert fresh["quantity"] >= assigned
+    fresh = next(i for i in items_data if i["id"] == item["id"])
+    assigned = sum(a["quantity"] for a in fresh["assignments"])
+    assert fresh["quantity"] >= assigned
+
+
+# ---------------------------------------------------------------------------
+# Метадата-перевірка: на всіх мутаційних ендпоінтах виставлені rate-лімітери
+# ---------------------------------------------------------------------------
+
+MUTATING_ROUTES = [
+    ("POST", "/items/"),
+    ("PATCH", "/items/{item_id}"),
+    ("POST", "/items/{item_id}/assign"),
+    ("DELETE", "/items/{item_id}/assign"),
+    ("DELETE", "/items/{item_id}"),
+    ("POST", "/trips/"),
+    ("PATCH", "/trips/{trip_id}"),
+    ("POST", "/trips/{trip_id}/categories/"),
+    ("PATCH", "/trips/{trip_id}/categories/{category_id}"),
+    ("DELETE", "/trips/{trip_id}/categories/{category_id}"),
+    ("POST", "/trips/{trip_id}/copy-items"),
+    ("PATCH", "/trips/{trip_id}/transfer-owner"),
+    ("POST", "/trips/{trip_id}/archive"),
+    ("POST", "/trips/{trip_id}/unarchive"),
+    ("DELETE", "/trips/{trip_id}"),
+    ("POST", "/trips/{trip_id}/invite"),
+    ("POST", "/trips/invite/{token}"),
+    ("DELETE", "/trips/{trip_id}/participants/{user_id}"),
+    ("DELETE", "/trips/{trip_id}/leave"),
+    ("PATCH", "/users/me"),
+    ("PATCH", "/users/me/password"),
+    ("DELETE", "/users/me"),
+]
+
+
+def test_mutating_endpoints_have_rate_limits():
+    """Метадата-перевірка: кожен мутаційний ендпоінт обгорнутий @limiter.limit
+    slowapi (обгортка має `__wrapped__`). Сам лімітер у тестах вимкнено,
+    тому перевіряємо лише факт наявності декоратора."""
+    for method, path in MUTATING_ROUTES:
+        matches = [
+            r for r in main.app.routes
+            if getattr(r, "path", None) == path and method in (r.methods or set())
+        ]
+        assert matches, f"Маршрут {method} {path} не знайдено"
+        endpoint = matches[0].endpoint
+        assert hasattr(endpoint, "__wrapped__"), f"{method} {path}: rate-limit не виставлено"

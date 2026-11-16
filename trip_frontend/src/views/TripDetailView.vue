@@ -17,6 +17,7 @@ const historyVersion = ref(0)
 const activeTab = ref('items')
 
 const trip = ref(null)
+const isArchived = computed(() => !!trip.value?.is_archived)
 const categories = ref([])
 const isLoading = ref(true)
 const errorMessage = ref('')
@@ -533,11 +534,17 @@ onMounted(async () => {
 
     <div v-else-if="trip">
       
+      <!-- плашка архіву: режим перегляду -->
+      <div v-if="isArchived" class="archive-banner">
+        📦 Поїздка в архіві — режим перегляду. Зміни недоступні.
+      </div>
+
       <!-- header -->
       <TripHeader 
         :trip="trip" 
         :currentUser="currentUser" 
         :isParticipant="isParticipant"
+        :is-archived="isArchived"
         @leave="leaveTrip"
         @delete="deleteTrip"
         @rename="renameTrip"
@@ -560,6 +567,7 @@ onMounted(async () => {
         :participants="trip.participants"
         :ownerUsername="trip.owner?.username"
         :currentUser="currentUser"
+        :is-archived="isArchived"
         @remove="removeParticipant"
         @transfer="transferOwnership"
       />
@@ -583,15 +591,16 @@ onMounted(async () => {
       </div>
 
       <div v-if="activeTab === 'items'">
-        <!-- додавання речей-->
+        <!-- додавання речей (приховано в архіві) -->
         <TripItemForm
+          v-if="!isArchived"
           :categories="categories"
           @add-item="addItem"
           @create-category="createCategory"
         />
 
-        <!-- наслідування речей з минулої поїздки -->
-        <div class="copy-trip-section">
+        <!-- наслідування речей з минулої поїздки (приховано в архіві) -->
+        <div v-if="!isArchived" class="copy-trip-section">
           <button class="copy-trip-btn" @click="openCopyModal">
             ↩ Наслідувати речі з іншої поїздки
           </button>
@@ -603,6 +612,7 @@ onMounted(async () => {
           :categories="categories"
           :currentUser="currentUser"
           :ownerUsername="trip.owner?.username"
+          :is-archived="isArchived"
           @toggle="toggleItemAssignment"
           @unassign-other="unassignOther"
           @update-my-quantity="changeMyQuantity"
@@ -665,6 +675,16 @@ onMounted(async () => {
 .trip-detail-container {
   max-width: 800px;
   margin: 0 auto;
+}
+.archive-banner {
+  background: #fff8e1;
+  border: 1px solid #f1c40f;
+  color: #7d6608;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 20px;
 }
 .loading, .error {
   text-align: center;

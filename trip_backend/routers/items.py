@@ -1,17 +1,20 @@
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Query, Body
+from fastapi import APIRouter, HTTPException, Depends, Query, Body, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
-from deps import get_current_user, user_is_member
+from deps import get_current_user, user_is_member, ensure_active_trip
 from activity_log import log_activity
+from rate_limit import limiter
 import models, schemas
 
 router = APIRouter(prefix="/items")
 
 @router.post("/", response_model=schemas.ItemResponse)
+@limiter.limit("100/minute")
 def create_item(
+    request: Request,
     item: schemas.ItemCreate, 
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
@@ -22,6 +25,8 @@ def create_item(
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+
+    ensure_active_trip(trip)
 
     category = db.get(models.Category, item.category_id)
     if category is None:
@@ -72,7 +77,9 @@ def create_item(
     return refreshed_item
 
 @router.patch("/{item_id}", response_model=schemas.ItemResponse)
+@limiter.limit("100/minute")
 def update_item(
+    request: Request,
     item_id: int,
     item_update: schemas.ItemUpdate,
     db: Session = Depends(get_db),
@@ -88,6 +95,8 @@ def update_item(
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+
+    ensure_active_trip(trip)
 
     content_changed = any(
         value is not None
@@ -173,7 +182,9 @@ def update_item(
     return refreshed_item
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
+@limiter.limit("150/minute")
 def assign_item(
+    request: Request,
     item_id: int,
     assign_request: Optional[schemas.AssignItemRequest] = Body(default=None),
     db: Session = Depends(get_db),
@@ -189,6 +200,8 @@ def assign_item(
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+
+    ensure_active_trip(trip)
 
     requested_quantity = assign_request.quantity if assign_request else 1
 
@@ -238,7 +251,9 @@ def assign_item(
     return refreshed_item
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
+@limiter.limit("150/minute")
 def unassign_item(
+    request: Request,
     item_id: int,
     user_id: Optional[int] = Query(default=None, description="ID користувача, у якого організатор знімає річ"),
     db: Session = Depends(get_db),
@@ -254,6 +269,8 @@ def unassign_item(
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
+
+    ensure_active_trip(trip)
 
     if user_id is not None:
         if trip.owner_id != current_user.id:
@@ -299,7 +316,9 @@ def unassign_item(
     return refreshed_item
 
 @router.delete("/{item_id}")
+@limiter.limit("100/minute")
 def delete_item(
+    request: Request,
     item_id: int, 
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
@@ -323,6 +342,8 @@ def delete_item(
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if item.created_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
+    ensure_active_trip(trip)
 
     try:
         log_activity(db, trip.id, current_user.id, "item_deleted", {"name": item.name, "quantity": item.quantity}, item.id, item.category_id)

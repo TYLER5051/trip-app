@@ -6,7 +6,8 @@ const props = defineProps({
   groupedItems: { type: Object, required: true },
   categories: { type: Array, required: true },
   currentUser: { type: String, required: true },
-  ownerUsername: { type: String, required: false }
+  ownerUsername: { type: String, required: false },
+  isArchived: { type: Boolean, required: false, default: false }
 })
 
 const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other', 'update-my-quantity', 'move-item'])
@@ -23,6 +24,7 @@ const categoryRenameInput = ref(null)
 
 // Право на перейменування/видалення має організатор або автор речі (не той, хто взяв)
 const canModifyItem = (item) => {
+  if (props.isArchived) return false
   const isOwner = props.ownerUsername === props.currentUser
   const isCreator = item.created_by && item.created_by.username === props.currentUser
   return isOwner || isCreator
@@ -102,7 +104,7 @@ const catFor = (name) => props.categories.find(c => c.name === name)
 
 // Категорію (як і річ) може змінювати/видаляти лише її автор або організатор
 const canModifyCategory = (cat) => {
-  if (!cat) return false
+  if (!cat || props.isArchived) return false
   const isOwner = props.ownerUsername === props.currentUser
   const isCreator = cat.created_by && cat.created_by.username === props.currentUser
   return isOwner || isCreator
@@ -207,7 +209,7 @@ const onDropOnCategory = (categoryName) => {
 <template>
   <div class="items-section">
     <h3>Список речей</h3>
-    <div class="drag-hint">💡 Перетягніть річ у іншу категорію, щоб перемістити її (може організатор або автор речі).</div>
+    <div v-if="!isArchived" class="drag-hint">💡 Перетягніть річ у іншу категорію, щоб перемістити її (може організатор або автор речі).</div>
 
     <!-- Якщо немає жодної категорії в згрупованих речах, значить список порожній -->
     <div v-if="Object.keys(groupedItems).length === 0" class="empty">
@@ -312,7 +314,7 @@ const onDropOnCategory = (categoryName) => {
               <label class="item-label">
                 <!-- Я взяв річ: чекбокс, щоб зняти -->
                 <input
-                  v-if="assignedByMe(item)"
+                  v-if="!isArchived && assignedByMe(item)"
                   type="checkbox"
                   checked
                   @change="emit('toggle', item)"
@@ -320,13 +322,13 @@ const onDropOnCategory = (categoryName) => {
                 />
                 <!-- Вільне місце: чекбокс, щоб взяти річ -->
                 <input
-                  v-else-if="!itemFull(item)"
+                  v-else-if="!isArchived && !itemFull(item)"
                   type="checkbox"
                   @change="emit('toggle', item)"
                   title="Взяти річ"
                 />
                 <!-- Степер своєї кількості (поруч із чекбоксом) -->
-                <span v-if="assignedByMe(item)" class="qty-stepper" title="Моя кількість">
+                <span v-if="!isArchived && assignedByMe(item)" class="qty-stepper" title="Моя кількість">
                   <button
                     class="stepper-btn"
                     @click="emit('update-my-quantity', { itemId: item.id, quantity: myAssignment(item).quantity - 1 })"
@@ -355,7 +357,7 @@ const onDropOnCategory = (categoryName) => {
               </label>
 
               <span
-                v-if="isOwner && otherAssignments(item).length"
+                v-if="!isArchived && isOwner && otherAssignments(item).length"
                 class="owner-unassign"
               >
                 <button
