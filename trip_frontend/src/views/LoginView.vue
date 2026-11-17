@@ -72,7 +72,9 @@ const submitForm = async () => {
       // логін
       const data = await api.login(username.value.trim(), password.value)
 
-      auth.setSession(data.access_token, username.value.trim())
+      // username беремо з відповіді сервера, а не з поля вводу —
+      // бекенд віддає канонічне ім'я (і він може його нормалізувати)
+      auth.setSession(data.access_token, data.username)
 
       router.push(redirectTo)
     }

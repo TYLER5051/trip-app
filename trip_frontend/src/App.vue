@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import auth from './stores/auth'
+import api from './services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -12,9 +13,19 @@ watch(() => route.path, () => {
   auth.syncFromStorage()
 })
 
-const handleLogout = () => {
-  auth.clearSession()
-  router.push('/login')
+const handleLogout = async () => {
+  // Спочатку серверний логаут: інкрементуємо token_version, щоб JWT
+  // перестав працювати навіть якщо його скопіювали (навіть після «Вийти»).
+  // finally — локальне очищення і редірект мають спрацювати завжди,
+  // навіть якщо токен уже протух (401) або сервер недоступний.
+  try {
+    await api.post('/logout')
+  } catch {
+    // ігноруємо: сесію чистимо локально в будь-якому разі
+  } finally {
+    auth.clearSession()
+    router.push('/login')
+  }
 }
 </script>
 

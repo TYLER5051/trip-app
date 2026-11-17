@@ -331,17 +331,17 @@ def delete_item(
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")
 
-    if item.is_critical:
-        raise HTTPException(
-            status_code=400,
-            detail="Важливу річ неможливо видалити. Спочатку зніміть мітку «Важлива» (це може зробити автор або організатор)."
-        )
-
     if trip.owner_id != current_user.id:
         if not user_is_member(db, trip, current_user.id):
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if item.created_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+
+    if item.is_critical:
+        raise HTTPException(
+            status_code=400,
+            detail="Важливу річ неможливо видалити. Спочатку зніміть мітку «Важлива» (це може зробити автор або організатор)."
+        )
 
     ensure_active_trip(trip)
 

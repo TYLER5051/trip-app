@@ -4,11 +4,11 @@ import datetime
 import json
 
 class UserBase(BaseModel):
-    username: str = Field(min_length=3, max_length=30)
+    username: str = Field(min_length=3, max_length=30, pattern=r"^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9_-]+$")
     model_config = ConfigDict(str_strip_whitespace=True)
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8, max_length=100)
+    password: str = Field(min_length=8, max_length=72)
 
 class UserResponse(UserBase):
     id: int
@@ -51,7 +51,7 @@ class CategoryUpdate(CategoryBase):
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=2, max_length=100)
-    quantity: int = Field(default=1, ge=1)
+    quantity: int = Field(default=1, ge=1, le=1000)
     note: Optional[str] = Field(default=None, max_length=200)
     is_critical: bool = False
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -62,7 +62,7 @@ class ItemCreate(ItemBase):
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    quantity: Optional[int] = Field(default=None, ge=1)
+    quantity: Optional[int] = Field(default=None, ge=1, le=1000)
     note: Optional[str] = Field(default=None, max_length=200)
     is_critical: Optional[bool] = None
     category_id: Optional[int] = Field(default=None, description="Нова категорія; null = не міняти")
@@ -70,11 +70,11 @@ class ItemUpdate(BaseModel):
 
 class ItemAssignmentResponse(BaseModel):
     user: UserResponse
-    quantity: int = Field(default=1, ge=1)
+    quantity: int = Field(default=1, ge=1, le=1000)
     model_config = ConfigDict(from_attributes=True)
 
 class AssignItemRequest(BaseModel):
-    quantity: int = Field(default=1, ge=1)
+    quantity: int = Field(default=1, ge=1, le=1000)
 
 class ItemResponse(ItemBase):
     id: int
@@ -171,7 +171,7 @@ class InviteTokenResponse(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     old_password: str
-    new_password: str = Field(min_length=8, max_length=100)
+    new_password: str = Field(min_length=8, max_length=72)
 
 class TransferOwnerRequest(BaseModel):
     new_owner_id: int

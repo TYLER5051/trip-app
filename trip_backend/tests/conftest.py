@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import main  # noqa: F401  (тут же спрацьовує models.Base.metadata.create_all)
+import models
 from database import engine
 
 main.app.state.limiter.enabled = False
@@ -43,6 +44,11 @@ def _cleanup():
 @pytest.fixture(scope="session")
 def client():
     """Клієнт, який «ходить» у наш API замість браузера (без HTTP-сервера)."""
+    # Перестворюємо схему, щоб CheckConstraint / server_default з моделей
+    # гарантовано потрапили в тестову БД (create_all не міняє існуючі таблиці).
+    models.Base.metadata.drop_all(bind=engine)
+    models.Base.metadata.create_all(bind=engine)
+
     with TestClient(main.app) as test_client:
         yield test_client
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint, Index, CheckConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
@@ -15,7 +15,8 @@ item_assignments = Table(
     Base.metadata,
     Column("item_id", Integer, ForeignKey("items.id"), primary_key=True, index=True),
     Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True),
-    Column("quantity", Integer, nullable=False, default=1)
+    Column("quantity", Integer, nullable=False, default=1, server_default="1"),
+    CheckConstraint("quantity >= 1", name="ck_item_assignments_quantity_gte_1")
 )
 
 class User(Base):
@@ -64,7 +65,10 @@ class Category(Base):
 
 class Item(Base):
     __tablename__ = "items"
-    __table_args__ = (UniqueConstraint("trip_id", "name", name="uq_items_trip_name"),)
+    __table_args__ = (
+        UniqueConstraint("trip_id", "name", name="uq_items_trip_name"),
+        CheckConstraint("quantity >= 1", name="ck_items_quantity_gte_1")
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True) 
