@@ -132,3 +132,34 @@ def test_read_archived_trip_still_works(client, auth_headers):
     trip_id, cat_id, item_id, org, u1, u2 = setup_archived(client, auth_headers)
     assert client.get(f"/trips/{trip_id}", headers=org).status_code == 200
     assert client.get(f"/trips/{trip_id}/items/?limit=100", headers=org).status_code == 200
+
+
+def test_participant_can_leave_archived_trip(client, auth_headers):
+    """вихід учасника з архівної поїздки дозволений свідомо (не мутація
+    даних поїздки, а лише відмова від участі) — а річ із нього звільняється."""
+    trip_id, cat_id, item_id, org, u1, u2 = setup_archived(client, auth_headers)
+
+    r = client.delete(f"/trips/{trip_id}/leave", headers=u1)
+    assert r.status_code == 200, r.text
+
+    # річ, яку u1 брав, звільнено
+    items = client.get(f"/trips/{trip_id}/items/?limit=100", headers=org).json()["items"]
+    stored = next(i for i in items if i["id"] == item_id)
+    assert stored["assignments"] == []
+
+    # u1 більше не учасник: доступ закрито
+    assert client.get(f"/trips/{trip_id}", headers=u1).status_code == 403
+
+
+def test_owner_cannot_remove_participant_in_archived(client, auth_headers):
+    """видалення учасника адміністратором — це мутація, в архіві вона таки
+    заблокована (на відміну від добровільного виходу)."""
+    trip_id, cat_id, item_id, org, u1, u2 = setup_archived(client, auth_headers)
+
+    u1_id = client.get("/users/me", headers=u1).json()["id"]
+    r = client.delete(f"/trips/{trip_id}/participants/{u1_id}", headers=org)
+    assert r.status_code == 400, r.text
+
+    # учасник на місці — звільнити його зможе лише розархівація
+    detail = client.get(f"/trips/{trip_id}", headers=org).json()
+    assert u1_id in [p["id"] for p in detail["participants"]]

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
 from database import get_db
-from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member, ensure_active_trip
+from deps import get_current_user, get_accessible_trip, get_owned_trip, user_is_member, ensure_active_trip, _ITEM_LOAD_OPTIONS
 from rate_limit import limiter
 from typing import List, Optional
 from activity_log import log_activity
@@ -12,12 +12,6 @@ import models, schemas
 import secrets
 
 router = APIRouter(prefix="/trips")
-
-_ITEM_LOAD_OPTIONS = (
-    selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
-    selectinload(models.Item.created_by),
-    selectinload(models.Item.category).selectinload(models.Category.created_by),
-)
 
 def _stats_for_trip(db: Session, trip_id: int):
     """Підраховує total_items/packed_items кількома простими запитами
@@ -231,7 +225,6 @@ def update_trip(
         trip.end_date = trip_update.end_date
 
     db.commit()
-    db.refresh(trip)
     trip.total_items, trip.packed_items = _stats_for_trip(db, trip_id)
     return trip
 
@@ -370,7 +363,7 @@ def update_categories_for_trip(
         if not user_is_member(db, trip, current_user.id):
             raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
         if category.created_by_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні речі (створені вами)")
+            raise HTTPException(status_code=403, detail="Ви можете змінювати лише власні категорії (створені вами)")
 
     ensure_active_trip(trip)
 
@@ -438,7 +431,16 @@ def transfer_owner(
         trip.participants.append(current_user)
 
     db.commit()
-    db.refresh(trip)
+    trip = (
+        db.query(models.Trip)
+        .options(
+            selectinload(models.Trip.owner),
+            selectinload(models.Trip.participants)
+        )
+        .populate_existing()
+        .filter(models.Trip.id == trip_id)
+        .first()
+        )
 
     return trip
 

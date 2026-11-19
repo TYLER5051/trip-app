@@ -9,10 +9,23 @@ const username = ref('')
 
 function syncFromStorage() {
   accessToken.value = localStorage.getItem('access_token') || ''
-  username.value = localStorage.getItem('username') || ''
+  if (accessToken.value) {
+    username.value = localStorage.getItem('username') || ''
+  } else {
+    localStorage.removeItem('username')
+    username.value = ''
+  }
 }
 
 syncFromStorage()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === 'access_token' || event.key === 'username') {
+      syncFromStorage()
+    }
+  })
+}
 
 const isLoggedIn = computed(() => !!accessToken.value)
 

@@ -2,7 +2,9 @@
 import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
-  categories: { type: Array, required: true }
+  categories: { type: Array, required: true },
+  isAddingItem: { type: Boolean, default: false },
+  isCreatingCategory: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['add-item', 'create-category'])
@@ -45,16 +47,17 @@ watch(() => props.categories, (newCats) => {
 }, { immediate: true })
 
 const submitItem = () => {
-  if (!newItemName.value.trim() || !selectedCategoryId.value) return
-  
-  emit('add-item', {
+  if (props.isAddingItem || !newItemName.value.trim() || !selectedCategoryId.value) return
+
+  const payload = {
     name: newItemName.value,
     categoryId: selectedCategoryId.value,
     quantity: newItemQuantity.value || 1,
     note: newItemNote.value.trim(),
     is_critical: newItemCritical.value
-  })
-  
+  }
+  emit('add-item', payload)
+
   newItemName.value = ''
   newItemQuantity.value = 1
   newItemNote.value = ''
@@ -62,6 +65,7 @@ const submitItem = () => {
 }
 
 const submitCategory = () => {
+  if (props.isCreatingCategory) return
   const name = newCategoryName.value.trim()
   if (!name) return
 
@@ -75,9 +79,8 @@ const submitCategory = () => {
   }
 
   emit('create-category', name)
-
-  newCategoryName.value = '' 
-  showCategoryForm.value = false 
+  newCategoryName.value = ''
+  showCategoryForm.value = false
 }
 </script>
 
@@ -112,7 +115,9 @@ const submitCategory = () => {
           <input type="checkbox" v-model="newItemCritical" />
           Важлива
         </label>
-        <button type="submit">Додати</button>
+        <button type="submit" :disabled="isAddingItem">
+          {{ isAddingItem ? 'Додавання...' : 'Додати' }}
+        </button>
       </div>
     </form>
 
@@ -124,7 +129,9 @@ const submitCategory = () => {
     
     <form v-if="showCategoryForm" @submit.prevent="submitCategory" class="category-form">
       <input type="text" v-model="newCategoryName" placeholder="Назва нової категорії (напр., Їжа)" required />
-      <button type="submit" class="btn-secondary">Створити</button>
+      <button type="submit" class="btn-secondary" :disabled="isCreatingCategory">
+        {{ isCreatingCategory ? 'Створення...' : 'Створити' }}
+      </button>
     </form>
   </div>
 </template>

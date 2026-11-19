@@ -214,10 +214,59 @@ def test_concurrent_quantity_update_vs_assign_invariant(client, auth_headers):
     assigned = sum(a["quantity"] for a in fresh["assignments"])
     assert fresh["quantity"] >= assigned
 
+def test_concurrent_delete_vs_assign_consistency(client, auth_headers):
+    """Рядковий лок (FOR UPDATE) серіалізує delete/assign:
+    - якщо першим устигає delete  -> assign отримує 404 (річ уже немає);
+    - якщо першим устигає assign  -> delete успішно видаляє річ, а в історію
+      записуються item_unassigned (за кожного учасника) та item_deleted.
+    Неприпустимі ні 500, ні хибне 400 «Ви вже взяли цю річ»."""
+    trip_id, cat1, cat2, org, u1, u2 = setup_trip(client, auth_headers)
+    item = create_item(client, org, trip_id, cat1, "Дощовик", quantity=1)
 
-# ---------------------------------------------------------------------------
-# Метадата-перевірка: на всіх мутаційних ендпоінтах виставлені rate-лімітери
-# ---------------------------------------------------------------------------
+    results = {}
+    barrier = threading.Barrier(2)
+
+    def try_delete():
+        with TestClient(main.app) as c:
+            barrier.wait(timeout=5)
+            results["delete"] = c.delete(f"/items/{item['id']}", headers=org).status_code
+
+    def try_assign():
+        with TestClient(main.app) as c:
+            barrier.wait(timeout=5)
+            results["assign"] = c.post(
+                f"/items/{item['id']}/assign",
+                json={"quantity": 1},
+                headers=u1,
+            ).status_code
+
+    t1 = threading.Thread(target=try_delete)
+    t2 = threading.Thread(target=try_assign)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    d, a = results["delete"], results["assign"]
+    assert d == 200, f"delete має завжди проходити (item існує): {d}"
+    assert a in (200, 404), f"assign: 404 якщо річ видалено, інакше 200, отримано {a}"
+
+    # Річ у будь-якому разі видалена
+    items_data = client.get(f"/trips/{trip_id}/items/?limit=100", headers=org).json()
+    assert all(i["id"] != item["id"] for i in items_data["items"])
+
+    acts = client.get(f"/trips/{trip_id}/activities?limit=50", headers=org).json()["items"]
+    deleted = [x for x in acts if x["action"] == "item_deleted"]
+    assert len(deleted) == 1, acts
+
+    if a == 200:
+        # assign устиг: у історії має бути рівно один item_unassigned — від того,
+        # хто видаляв, з деталями призначення (не від того, хто брав річ).
+        unassigned = [x for x in acts if x["action"] == "item_unassigned"]
+        assert len(unassigned) == 1, acts
+        assert unassigned[0]["details"]["quantity"] == 1
+        assert unassigned[0]["details"]["name"] == "Дощовик"
+
 
 MUTATING_ROUTES = [
     ("POST", "/items/"),

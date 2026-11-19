@@ -9,6 +9,11 @@ import models
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+_ITEM_LOAD_OPTIONS = (
+    selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
+    selectinload(models.Item.created_by),
+    selectinload(models.Item.category).selectinload(models.Category.created_by),
+)
 
 def get_current_user(
     token: str = Depends(oauth2_scheme), 
@@ -91,3 +96,35 @@ def ensure_active_trip(
 ):
     if trip.is_archived:
         raise HTTPException(status_code=400, detail="Поїздку архівовано — зміни недоступні")
+
+def reload_item(
+    item_id: int,
+    db: Session
+):
+    item = (
+        db.query(models.Item)
+        .filter(models.Item.id == item_id)
+        .options(*_ITEM_LOAD_OPTIONS)
+        .populate_existing()
+        .first()
+    )
+
+    return item
+
+def get_trip_item(
+    item_id: int,
+    db: Session,
+    current_user: models.User,
+    for_update: bool = False
+) -> tuple[models.Item, models.Trip]:
+    if for_update:
+        item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
+    else:
+        item = db.get(models.Item, item_id)
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Річ не знайдено")
+
+    trip = get_accessible_trip(item.trip_id, db, current_user)
+
+    return (item, trip)

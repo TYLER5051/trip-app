@@ -8,7 +8,18 @@ import auth from '../stores/auth'
 const route = useRoute()
 const router = useRouter()
 
-const redirectTo = route.query.redirect ? String(route.query.redirect) : '/'
+// редірект має бути лише на внутрішній відносний шлях — інакше це
+// Open Redirect. Дозволяємо шляхи на кшталт /trips/5, але не //evil.com,
+// http://…, javascript:… тощо.
+const safeRedirect = (value) => {
+  if (!value || typeof value !== 'string') return '/'
+  if (!value.startsWith('/')) return '/'
+  if (value.startsWith('//')) return '/'
+  if (/^https?:\/\//i.test(value)) return '/'
+  return value
+}
+
+const redirectTo = safeRedirect(route.query.redirect)
 
 const previewTrip = ref(null)
 

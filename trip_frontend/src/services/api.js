@@ -1,14 +1,19 @@
 import auth from '../stores/auth'
+import router from '../router'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Коли бекенд відповідає 401 — токен протух або невалідний.
-// Чистимо сесію (localStorage + реактивний стан) і повертаємо користувача на логін.
+// Чистимо сесію (localStorage + реактивний стан) і повертаємо користувача на логін,
+// зберігаючи поточний шлях у ?redirect=..., щоб після входу повернутися назад.
 function handleUnauthorized() {
   auth.clearSession()
-  if (!window.location.pathname.startsWith('/login')) {
-    window.location.href = '/login'
-  }
+
+  if (router.currentRoute.value.name === 'Login') return
+
+  // fullPath вже містить query, якщо вони були — не втрачаємо контекст
+  const redirect = router.currentRoute.value.fullPath
+  router.replace({ name: 'Login', query: { redirect } })
 }
 
 const FIELD_LABELS = {

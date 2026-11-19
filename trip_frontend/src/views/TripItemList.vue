@@ -5,12 +5,37 @@ import UserAvatar from '../components/UserAvatar.vue'
 const props = defineProps({
   groupedItems: { type: Object, required: true },
   categories: { type: Array, required: true },
-  currentUser: { type: String, required: true },
-  ownerUsername: { type: String, required: false },
-  isArchived: { type: Boolean, required: false, default: false }
+  currentUserId: { type: Number, required: true },
+  ownerId: { type: Number, required: false, default: null },
+  isArchived: { type: Boolean, required: false, default: false },
+  pendingItemId: { type: Number, required: false, default: null }
 })
 
 const emit = defineEmits(['toggle', 'delete', 'rename', 'update-quantity', 'unmark-critical', 'rename-category', 'delete-category', 'unassign-other', 'update-my-quantity', 'move-item'])
+
+// доки триває запит assign/unassign — блокуємо повторний клік по чекбоксу,
+// щоб подвійне натискання не створило дві паралельні зміни призначення.
+const busyItemId = ref(null)
+
+const handleToggle = (item) => {
+  if (busyItemId.value !== null || props.pendingItemId !== null) return
+  busyItemId.value = item.id
+  emit('toggle', item)
+  busyItemId.value = null
+}
+
+const hasPendingRequest = computed(() => busyItemId.value !== null || props.pendingItemId !== null)
+
+const handleChangeMyQuantity = (item, delta) => {
+  if (busyItemId.value !== null || props.pendingItemId !== null) return
+  const next = (myAssignment(item)?.quantity || 0) + delta
+  emit('update-my-quantity', { itemId: item.id, quantity: next })
+}
+
+const handleUnassignOther = (item, user) => {
+  if (busyItemId.value !== null || props.pendingItemId !== null) return
+  emit('unassign-other', { item, user })
+}
 
 // Стан редагування назви речі
 const editingId = ref(null)
@@ -25,20 +50,20 @@ const categoryRenameInput = ref(null)
 // Право на перейменування/видалення має організатор або автор речі (не той, хто взяв)
 const canModifyItem = (item) => {
   if (props.isArchived) return false
-  const isOwner = props.ownerUsername === props.currentUser
-  const isCreator = item.created_by && item.created_by.username === props.currentUser
+  const isOwner = props.ownerId === props.currentUserId
+  const isCreator = item.created_by && item.created_by.id === props.currentUserId
   return isOwner || isCreator
 }
 
 // Чи поточний користувач — організатор поїздки
-const isOwner = computed(() => !!props.ownerUsername && props.ownerUsername === props.currentUser)
+const isOwner = computed(() => !!props.ownerId && props.ownerId === props.currentUserId)
 
 // Чи «взяв» річ поточний користувач (його призначення з кількістю)
-const myAssignment = (item) => (item.assignments || []).find(a => a.user.username === props.currentUser)
+const myAssignment = (item) => (item.assignments || []).find(a => a.user.id === props.currentUserId)
 const assignedByMe = (item) => !!myAssignment(item)
 
 // Призначення інших учасників (крім поточного користувача)
-const otherAssignments = (item) => (item.assignments || []).filter(a => a.user.username !== props.currentUser)
+const otherAssignments = (item) => (item.assignments || []).filter(a => a.user.id !== props.currentUserId)
 
 // Сумарно розібраних одиниць
 const totalAssigned = (item) => (item.assignments || []).reduce((s, a) => s + (a.quantity || 0), 0)
@@ -71,7 +96,7 @@ const filteredGroups = computed(() => {
 
     if (showMyItems.value) {
       list = list.filter(item =>
-        (item.created_by && item.created_by.username === props.currentUser) ||
+        (item.created_by && item.created_by.id === props.currentUserId) ||
         assignedByMe(item)
       )
     }
@@ -105,8 +130,8 @@ const catFor = (name) => props.categories.find(c => c.name === name)
 // Категорію (як і річ) може змінювати/видаляти лише її автор або організатор
 const canModifyCategory = (cat) => {
   if (!cat || props.isArchived) return false
-  const isOwner = props.ownerUsername === props.currentUser
-  const isCreator = cat.created_by && cat.created_by.username === props.currentUser
+  const isOwner = props.ownerId === props.currentUserId
+  const isCreator = cat.created_by && cat.created_by.id === props.currentUserId
   return isOwner || isCreator
 }
 
@@ -317,27 +342,30 @@ const onDropOnCategory = (categoryName) => {
                   v-if="!isArchived && assignedByMe(item)"
                   type="checkbox"
                   checked
-                  @change="emit('toggle', item)"
+                  :disabled="hasPendingRequest"
+                  @change="handleToggle(item)"
                   title="Зняти свою позначку"
                 />
                 <!-- Вільне місце: чекбокс, щоб взяти річ -->
                 <input
                   v-else-if="!isArchived && !itemFull(item)"
                   type="checkbox"
-                  @change="emit('toggle', item)"
+                  :disabled="hasPendingRequest"
+                  @change="handleToggle(item)"
                   title="Взяти річ"
                 />
                 <!-- Степер своєї кількості (поруч із чекбоксом) -->
                 <span v-if="!isArchived && assignedByMe(item)" class="qty-stepper" title="Моя кількість">
                   <button
                     class="stepper-btn"
-                    @click="emit('update-my-quantity', { itemId: item.id, quantity: myAssignment(item).quantity - 1 })"
+                    :disabled="hasPendingRequest"
+                    @click="handleChangeMyQuantity(item, -1)"
                   >−</button>
                   <span class="stepper-value">{{ myAssignment(item).quantity }}</span>
                   <button
                     class="stepper-btn"
-                    :disabled="itemFull(item)"
-                    @click="emit('update-my-quantity', { itemId: item.id, quantity: myAssignment(item).quantity + 1 })"
+                    :disabled="itemFull(item) || hasPendingRequest"
+                    @click="handleChangeMyQuantity(item, +1)"
                   >+</button>
                 </span>
                 <span class="item-info">
@@ -364,8 +392,9 @@ const onDropOnCategory = (categoryName) => {
                   v-for="a in otherAssignments(item)"
                   :key="a.user.id"
                   class="unassign-inline-btn"
+                  :disabled="hasPendingRequest"
                   :title="`Зняти річ із ${a.user.username}`"
-                  @click="emit('unassign-other', { item, user: a.user })"
+                  @click="handleUnassignOther(item, a.user)"
                 >Зняти: {{ a.user.username }}</button>
               </span>
 
@@ -381,7 +410,7 @@ const onDropOnCategory = (categoryName) => {
                 v-for="a in item.assignments"
                 :key="a.user.id"
                 class="assignee-badge"
-                :title="a.user.username === currentUser ? 'Ви взяли цю річ' : `Цю річ взяв ${a.user.username}`"
+                :title="a.user.id === currentUserId ? 'Ви взяли цю річ' : `Цю річ взяв ${a.user.username}`"
               >
                 <UserAvatar :username="a.user.username" :color="a.user.avatar_color" :size="18" />
                 ✓ {{ a.user.username }}<span v-if="a.quantity > 1" class="assignee-qty">×{{ a.quantity }}</span>

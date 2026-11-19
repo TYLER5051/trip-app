@@ -5,7 +5,7 @@ import api from '../services/api'
 
 const props = defineProps({
   trip: { type: Object, required: true },
-  currentUser: { type: String, required: true },
+  currentUserId: { type: Number, required: true },
   isParticipant: { type: Boolean, required: true },
   isArchived: { type: Boolean, required: false, default: false }
 })
@@ -79,7 +79,7 @@ const tripDates = computed(() => {
   return s || e || ''
 })
 
-const isOwner = computed(() => !!props.trip.owner && props.trip.owner.username === props.currentUser)
+const isOwner = computed(() => !!props.trip.owner && props.trip.owner.id === props.currentUserId)
 
 // Редагування дат поїздки (тільки організатор)
 const isEditingDates = ref(false)
@@ -132,47 +132,47 @@ const saveDates = () => {
     
     <div class="actions-bar">
       <!-- Якщо ми НЕ організатор і ЩЕ НЕ учасник: вступити можна лише за інвайт-посиланням -->
-      <div v-if="trip.owner?.username !== currentUser && !isParticipant" class="join-hint">
+      <div v-if="!isOwner && !isParticipant" class="join-hint">
         🔗 Щоб приєднатися, попросіть організатора надіслати інвайт-посилання
       </div>
       
       <!-- Якщо ми ВЖЕ приєдналися -->
-      <div v-if="trip.owner?.username !== currentUser && isParticipant" class="joined-status">
+      <div v-if="!isOwner && isParticipant" class="joined-status">
         <span class="joined-badge">Ти є учасником</span>
         <button @click="emit('leave')" class="leave-btn">Вийти з поїздки</button>
       </div>
       
       <!-- Кнопка видалення поїздки для організатора -->
       <button 
-        v-if="trip.owner?.username === currentUser && !isArchived" 
+        v-if="isOwner && !isArchived" 
         @click="emit('delete')" 
         class="delete-trip-btn"
       >
         Видалити поїздку
       </button>
 
-      <button v-if="trip.owner?.username === currentUser && !isArchived" @click="copyInviteLink" class="copy-link-btn">
+      <button v-if="isOwner && !isArchived" @click="copyInviteLink" class="copy-link-btn">
         Скопіювати інвайт-посилання
       </button>
-      <button v-if="trip.owner?.username === currentUser && !isArchived" @click="rotateInviteLink" class="rotate-invite-btn">
+      <button v-if="isOwner && !isArchived" @click="rotateInviteLink" class="rotate-invite-btn">
         Нове інвайт-посилання
       </button>
 
       <!-- Архівація поїздки (тільки організатор) -->
       <button
-        v-if="trip.owner?.username === currentUser && trip.is_archived"
+        v-if="isOwner && trip.is_archived"
         @click="emit('unarchive')"
         class="unarchive-btn"
       >Повернути з архіву</button>
       <button
-        v-else-if="trip.owner?.username === currentUser"
+        v-else-if="isOwner"
         @click="emit('archive')"
         class="archive-btn"
       >Архівувати</button>
 
       <!-- Перейменування поїздки (тільки організатор) -->
       <button 
-        v-if="trip.owner?.username === currentUser && !isArchived" 
+        v-if="isOwner && !isArchived" 
         @click="isEditingTitle = true; newTitle = trip.title" 
         class="rename-trip-btn"
       >

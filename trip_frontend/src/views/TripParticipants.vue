@@ -4,11 +4,10 @@ import UserAvatar from '../components/UserAvatar.vue'
 
 defineProps({
   participants: { type: Array, required: true },
-  ownerUsername: { type: String, required: false },
-  currentUser: { type: String, required: true },
+  ownerId: { type: Number, required: false, default: null },
+  currentUserId: { type: Number, required: true },
   isArchived: { type: Boolean, required: false, default: false }
 })
-
 
 const emit = defineEmits(['remove', 'transfer'])
 </script>
@@ -27,7 +26,7 @@ const emit = defineEmits(['remove', 'transfer'])
         
         <!-- Передача прав організатора (Тільки для організатора, не в архіві) -->
         <button 
-          v-if="ownerUsername === currentUser && !isArchived"
+          v-if="ownerId === currentUserId && !isArchived"
           @click="emit('transfer', participant.id)"
           class="transfer-participant-btn"
           title="Передати права організатора"
@@ -36,7 +35,7 @@ const emit = defineEmits(['remove', 'transfer'])
         </button>
         <!-- Кнопка видалення учасника (Тільки для організатора, не в архіві) -->
         <button 
-          v-if="ownerUsername === currentUser && !isArchived"
+          v-if="ownerId === currentUserId && !isArchived"
           @click="emit('remove', participant.id)"
           class="remove-participant-btn"
           title="Видалити учасника"

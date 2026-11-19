@@ -152,6 +152,7 @@ def leave_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """Вихід учасника із архівної поїздки дозволений свідомо"""
     trip = db.get(models.Trip, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Поїздку не знайдено")

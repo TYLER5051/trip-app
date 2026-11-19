@@ -6,6 +6,9 @@
 
 ВАЖЛИВО: перед запуском має бути піднята БД:
     docker compose up -d db
+
+Структура тестів — доменні підпакети (auth/, trips/, items/, categories/,
+activity/, perf/), див. README.md
 """
 import os
 import sys
@@ -18,7 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-import main  # noqa: F401  (тут же спрацьовує models.Base.metadata.create_all)
+import main 
 import models
 from database import engine
 

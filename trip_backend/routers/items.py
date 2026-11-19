@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from database import get_db
-from deps import get_current_user, user_is_member, ensure_active_trip
+from deps import get_current_user, user_is_member, ensure_active_trip, get_trip_item, reload_item
 from activity_log import log_activity
 from rate_limit import limiter
 import models, schemas
@@ -63,18 +63,7 @@ def create_item(
         db.rollback()
         raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
 
-    refreshed_item = (
-    db.query(models.Item)
-    .options(
-        selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
-        selectinload(models.Item.created_by),
-        selectinload(models.Item.category),
-    )
-    .filter(models.Item.id == db_item.id)
-    .first()
-    )
-
-    return refreshed_item
+    return reload_item(db_item.id, db)
 
 @router.patch("/{item_id}", response_model=schemas.ItemResponse)
 @limiter.limit("100/minute")
@@ -85,13 +74,7 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
-    if item is None:
-        raise HTTPException(status_code=404, detail="Річ не знайдено")
-
-    trip = db.get(models.Trip, item.trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+    item, trip = get_trip_item(item_id, db, current_user, for_update=True)
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
@@ -168,18 +151,7 @@ def update_item(
         db.rollback()
         raise HTTPException(status_code=400, detail="Така річ вже існує в цій поїздці")
 
-    refreshed_item = (
-    db.query(models.Item)
-    .options(
-        selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
-        selectinload(models.Item.created_by),
-        selectinload(models.Item.category),
-    )
-    .filter(models.Item.id == item_id)
-    .first()
-    )
-
-    return refreshed_item
+    return reload_item(item_id, db)
 
 @router.post("/{item_id}/assign", response_model=schemas.ItemResponse)
 @limiter.limit("150/minute")
@@ -190,13 +162,7 @@ def assign_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
-    if item is None:
-        raise HTTPException(status_code=404, detail="Річ не знайдено")
-
-    trip = db.get(models.Trip, item.trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+    item, trip = get_trip_item(item_id, db, current_user, for_update=True)
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
@@ -235,20 +201,12 @@ def assign_item(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
-
-    refreshed_item = (
-        db.query(models.Item)
-        .options(
-            selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
-            selectinload(models.Item.created_by),
-            selectinload(models.Item.category),
-        )
-        .filter(models.Item.id == item_id)
-        .first()
-    )
-
-    return refreshed_item
+        if not db.get(models.Item, item_id):
+            raise HTTPException(status_code=404, detail="Річ не знайдено")
+        else:
+            raise HTTPException(status_code=400, detail="Ви вже взяли цю річ")
+        
+    return reload_item(item_id, db)
 
 @router.delete("/{item_id}/assign", response_model=schemas.ItemResponse)
 @limiter.limit("150/minute")
@@ -259,13 +217,7 @@ def unassign_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    item = db.query(models.Item).filter(models.Item.id == item_id).with_for_update().first()
-    if item is None:
-        raise HTTPException(status_code=404, detail="Річ не знайдено")
-
-    trip = db.get(models.Trip, item.trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+    item, trip = get_trip_item(item_id, db, current_user, for_update=True)
 
     if trip.owner_id != current_user.id and not user_is_member(db, trip, current_user.id):
         raise HTTPException(status_code=403, detail="Ви не є учасником цієї поїздки")
@@ -301,19 +253,8 @@ def unassign_item(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Не вдалося зняти позначку. Спробуйте ще раз")
-
-    refreshed_item = (
-        db.query(models.Item)
-        .options(
-            selectinload(models.Item.assignments).selectinload(models.ItemAssignment.user),
-            selectinload(models.Item.created_by),
-            selectinload(models.Item.category),
-        )
-        .filter(models.Item.id == item_id)
-        .first()
-    )
-
-    return refreshed_item
+    
+    return reload_item(item_id, db)
 
 @router.delete("/{item_id}")
 @limiter.limit("100/minute")
@@ -323,13 +264,7 @@ def delete_item(
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
 ):
-    item = db.get(models.Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Річ не знайдено")
-
-    trip = db.get(models.Trip, item.trip_id)
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Поїздку не знайдено")
+    item, trip = get_trip_item(item_id, db, current_user, for_update=True)
 
     if trip.owner_id != current_user.id:
         if not user_is_member(db, trip, current_user.id):
@@ -346,6 +281,13 @@ def delete_item(
     ensure_active_trip(trip)
 
     try:
+        for assignment in item.assignments:
+            log_activity(
+                db, trip.id, current_user.id, "item_unassigned",
+                {"name": item.name, "quantity": assignment.quantity, "user_id": assignment.user_id},
+                item.id,
+            )
+
         log_activity(db, trip.id, current_user.id, "item_deleted", {"name": item.name, "quantity": item.quantity}, item.id, item.category_id)
         db.delete(item)
         db.commit()

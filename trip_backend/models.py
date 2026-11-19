@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 trip_users = Table(
     "trip_users",
     Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True),
-    Column("trip_id", Integer, ForeignKey("trips.id"), primary_key=True, index=True)
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True),
+    Column("trip_id", Integer, ForeignKey("trips.id", ondelete="CASCADE"), primary_key=True, index=True)
 )
 
 item_assignments = Table(
     "item_assignments",
     Base.metadata,
-    Column("item_id", Integer, ForeignKey("items.id"), primary_key=True, index=True),
+    Column("item_id", Integer, ForeignKey("items.id", ondelete="CASCADE"), primary_key=True, index=True),
     Column("user_id", Integer, ForeignKey("users.id"), primary_key=True, index=True),
     Column("quantity", Integer, nullable=False, default=1, server_default="1"),
     CheckConstraint("quantity >= 1", name="ck_item_assignments_quantity_gte_1")
@@ -46,8 +46,8 @@ class Trip(Base):
 
     owner = relationship("User", back_populates="owned_trips")
     participants = relationship("User", secondary=trip_users, back_populates="participating_trips")
-    items = relationship("Item", back_populates="trip", cascade="all, delete")
-    categories = relationship("Category", back_populates="trip", cascade="all, delete")
+    items = relationship("Item", back_populates="trip", cascade="all, delete", passive_deletes=True)
+    categories = relationship("Category", back_populates="trip", cascade="all, delete", passive_deletes=True)
 
 class Category(Base):
     __tablename__ = "categories"
@@ -55,7 +55,7 @@ class Category(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     items = relationship("Item", back_populates="category")
@@ -76,7 +76,7 @@ class Item(Base):
     note = Column(String, nullable=True)
     is_critical = Column(Boolean, default=False)
 
-    trip_id = Column(Integer, ForeignKey("trips.id"), index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     category_id = Column(Integer, ForeignKey("categories.id"), index=True)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
@@ -84,7 +84,7 @@ class Item(Base):
     trip = relationship("Trip", back_populates="items")
     category = relationship("Category", back_populates="items")
     created_by = relationship("User", foreign_keys=[created_by_id])
-    assignments = relationship("ItemAssignment", back_populates="item", order_by="ItemAssignment.user_id", cascade="all, delete-orphan")
+    assignments = relationship("ItemAssignment", back_populates="item", order_by="ItemAssignment.user_id", cascade="all, delete-orphan", passive_deletes=True)
 
 class ItemAssignment(Base):
     __table__ = item_assignments

@@ -12,7 +12,7 @@ import ActivityFeed from '../components/ActivityFeed.vue'
 
 const route = useRoute()
 const router = useRouter()
-const tripId = route.params.id
+const tripId = computed(() => route.params.id)
 const historyVersion = ref(0)
 const activeTab = ref('items')
 
@@ -23,8 +23,17 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const accessError = ref(false)
 
-// Поточного користувача беремо з /users/me (реактивно), не з localStorage
-const currentUser = ref('')
+// Лічильник завантажень поїздки: старі відповіді (після швидкого перемикання
+// між поїздками) ігноруємо
+const tripSeq = ref(0)
+
+// Поточного користувача беремо з /users/me як числовий id — усі перевірки прав
+// робимо за id (не за username), щоб зміна логіна не ламала кнопки.
+const currentUserId = ref(null)
+const pendingItemId = ref(null)
+const isAddingItem = ref(false)
+const isCreatingCategory = ref(false)
+const isCopyingTrip = ref(false)
 
 // ---- Речі беремо з сервера: пошук (GET /trips/:id/items/), без пагінації ----
 const items = ref([])
@@ -48,26 +57,38 @@ onUnmounted(() => {
 
 // race-guard: якщо користувач швидко ввів новий пошук або змінив дані,
 // відповідь старого запиту ігнорується.
-// Бекенд віддає максимум 100 речей за запит, тому качаємо пакетами,
-// поки не зберемо всі. Пагінації в UI немає: весь чекліст видно одразу,
-// а старий список залишається на екрані до заміни новим (без блимання).
+// Бекенд віддає максимум 100 речей за запит. Куди більше 1 сторінки — решту
+// качаємо паралельно (Promise.all), щоб не тягнути сторінки послідовно.
 const fetchItems = async () => {
   const seq = ++itemsSeq
-  const all = []
-  try {
-    while (true) {
-      const params = new URLSearchParams()
-      params.set('limit', '100')
-      params.set('offset', String(all.length))
-      if (itemQ.value) params.set('q', itemQ.value)
+  const params = new URLSearchParams()
+  params.set('limit', '100')
+  if (itemQ.value) params.set('q', itemQ.value)
 
-      const data = await api.get(`/trips/${tripId}/items/?${params.toString()}`)
-      if (seq !== itemsSeq) return
-      all.push(...data.items)
-      if (data.items.length < 100) break
-    }
+  const pageUrl = (offset) => {
+    const p = new URLSearchParams(params)
+    p.set('offset', String(offset))
+    return `/trips/${tripId.value}/items/?${p.toString()}`
+  }
+
+  try {
+    const first = await api.get(pageUrl(0))
     if (seq !== itemsSeq) return
-    items.value = all
+
+    const total = first.total ?? first.items.length
+    const pagesNeeded = Math.max(1, Math.ceil(total / 100))
+
+    if (pagesNeeded <= 1) {
+      items.value = first.items
+      return
+    }
+
+    const rest = await Promise.all(
+      Array.from({ length: pagesNeeded - 1 }, (_, i) => api.get(pageUrl((i + 1) * 100)))
+    )
+    if (seq !== itemsSeq) return
+
+    items.value = [].concat(first.items, ...rest.map(r => r.items))
   } catch (error) {
     if (seq !== itemsSeq) return
     if (error.status === 403 || error.status === 404) {
@@ -80,24 +101,60 @@ const fetchItems = async () => {
 
 // Завантаження даних поїздки, категорій та речей
 const fetchTripData = async () => {
+  const seq = tripSeq.value
   try {
     const [tripData, catsData] = await Promise.all([
-      api.get(`/trips/${tripId}`),
-      api.get(`/trips/${tripId}/categories/`)
+      api.get(`/trips/${tripId.value}`),
+      api.get(`/trips/${tripId.value}/categories/`)
     ])
+    if (seq !== tripSeq.value) return
     trip.value = tripData
     categories.value = catsData
     await fetchItems()
+    if (seq !== tripSeq.value) return
     historyVersion.value += 1
   } catch (error) {
+    if (seq !== tripSeq.value) return
     if (error.status === 403 || error.status === 404) {
       accessError.value = true
     } else {
       errorMessage.value = error.message
     }
   } finally {
-    isLoading.value = false
+    if (seq === tripSeq.value) isLoading.value = false
   }
+}
+
+//оновлюємо одну річ у локальному списку за id — без перезавантаження всього списку
+const applyItemUpdate = (updated) => {
+  if (!updated) return
+  const idx = items.value.findIndex(i => i.id === updated.id)
+  if (idx !== -1) items.value[idx] = updated
+  else items.value.push(updated)
+}
+
+// Оновлюємо лише статистику поїздки (список речей уже актуальний)
+const refreshTripStats = async () => {
+  try {
+    trip.value = await api.get(`/trips/${tripId.value}`)
+  } catch {
+    // статистика не критична — лишаємо попередню
+  }
+  historyVersion.value += 1
+}
+
+// Повне синхронізування після помилки: список має збігатися з сервером
+const reloadItemsAndStats = async () => {
+  try {
+    const [freshTrip] = await Promise.all([
+      api.get(`/trips/${tripId.value}`),
+      fetchItems()
+    ])
+    trip.value = freshTrip
+  } catch (error) {
+    if (error.status !== 403 && error.status !== 404) toast.error(error.message)
+  }
+  historyVersion.value += 1
 }
 
 // Групування речей за категоріями
@@ -129,7 +186,7 @@ const groupedItems = computed(() => {
 
 const isParticipant = computed(() => {
   if (!trip.value || !trip.value.participants) return false
-  return trip.value.participants.some(p => p.username === currentUser.value)
+  return trip.value.participants.some(p => p.id === currentUserId.value)
 })
 
 const packingPercent = computed(() => {
@@ -154,7 +211,7 @@ const openCopyModal = async () => {
     ])
     const byId = new Map()
     ;[...active.items, ...archived.items].forEach(t => {
-      if (t.id != tripId && t.total_items > 0) byId.set(t.id, t)
+      if (t.id != tripId.value && t.total_items > 0) byId.set(t.id, t)
     })
     copySourceTrips.value = [...byId.values()]
   } catch (error) {
@@ -165,8 +222,9 @@ const openCopyModal = async () => {
 }
 
 const handleCopyItems = async (sourceTripId) => {
+  isCopyingTrip.value = true
   try {
-    const res = await api.post(`/trips/${tripId}/copy-items`, { source_trip_id: sourceTripId })
+    const res = await api.post(`/trips/${tripId.value}/copy-items`, { source_trip_id: sourceTripId })
     showCopyModal.value = false
     await fetchTripData()
     const extra = res.skipped_items
@@ -175,6 +233,8 @@ const handleCopyItems = async (sourceTripId) => {
     toast.success(`${res.message} Додано речей: ${res.copied_items}.${extra}`)
   } catch (error) {
     toast.error(error.message)
+  } finally {
+    isCopyingTrip.value = false
   }
 }
 
@@ -190,7 +250,7 @@ const removeParticipant = async (participantId) => {
   if (!confirm(`Видалити учасника ${who}? Його взяті речі (${freedCount}) стануть вільними.`)) return
 
   try {
-    await api.delete(`/trips/${tripId}/participants/${participantId}`)
+    await api.delete(`/trips/${tripId.value}/participants/${participantId}`)
     await fetchTripData()
     toast.success(freedCount > 0 ? `Речі учасника звільнено: ${freedCount} шт.` : 'Учасника видалено.')
   } catch (error) {
@@ -205,7 +265,7 @@ const transferOwnership = async (participantId) => {
   if (!confirm(`Передати права організатора учаснику ${who}? Ви станете звичайним учасником.`)) return
 
   try {
-    await api.patch(`/trips/${tripId}/transfer-owner`, { new_owner_id: participantId })
+    await api.patch(`/trips/${tripId.value}/transfer-owner`, { new_owner_id: participantId })
     await fetchTripData()
     toast.success(`Права організатора передано ${who}`)
   } catch (error) {
@@ -218,7 +278,7 @@ const leaveTrip = async () => {
   if (!confirm('Ти дійсно хочеш вийти з цієї поїздки? Всі твої спаковані речі стануть вільними.')) return
 
   try {
-    await api.delete(`/trips/${tripId}/leave`)
+    await api.delete(`/trips/${tripId.value}/leave`)
 
     // Після успішного виходу кидаємо користувача на головну сторінку
     router.push('/')
@@ -229,13 +289,16 @@ const leaveTrip = async () => {
 
 
 const createCategory = async (categoryName) => {
+  isCreatingCategory.value = true
   try {
-    await api.post(`/trips/${tripId}/categories/`, { name: categoryName })
+    await api.post(`/trips/${tripId.value}/categories/`, { name: categoryName })
 
     await fetchTripData()
     toast.success("Категорію успішно створено.")
   } catch (error) {
     toast.error(error.message)
+  } finally {
+    isCreatingCategory.value = false
   }
 }
 
@@ -248,7 +311,7 @@ const renameCategory = async ({ id, name }) => {
   }
 
   try {
-    await api.patch(`/trips/${tripId}/categories/${id}`, { name: name.trim() })
+    await api.patch(`/trips/${tripId.value}/categories/${id}`, { name: name.trim() })
 
     await fetchTripData()
     toast.success('Категорію перейменовано.')
@@ -291,7 +354,7 @@ const confirmDeleteCategory = async () => {
   try {
     const moveTo = deleteTargetCategoryId.value || null
     const query = moveTo ? `?move_to=${moveTo}` : ''
-    const res = await api.delete(`/trips/${tripId}/categories/${category.id}${query}`)
+    const res = await api.delete(`/trips/${tripId.value}/categories/${category.id}${query}`)
     categoryToDelete.value = null
     await fetchTripData()
     toast.success(res.message || 'Категорію видалено.')
@@ -303,10 +366,11 @@ const confirmDeleteCategory = async () => {
 }
 
 const addItem = async (payload) => {
+  isAddingItem.value = true
   try {
     await api.post('/items/', {
       name: payload.name,
-      trip_id: Number(tripId),
+      trip_id: Number(tripId.value),
       category_id: Number(payload.categoryId),
       quantity: payload.quantity ?? 1,
       note: payload.note || null,
@@ -317,63 +381,66 @@ const addItem = async (payload) => {
     toast.success("Річ додано до списку.")
   } catch (error) {
     toast.error(error.message)
+  } finally {
+    isAddingItem.value = false
   }
 }
 
 // Взяти річ через чекбокс: кожен учасник «бере» свій слот (поки є місця = quantity)
 const toggleItemAssignment = async (item) => {
-  const assignedByMe = (item.assignments || []).some(a => a.user.username === currentUser.value)
+  const assignedByMe = (item.assignments || []).some(a => a.user.id === currentUserId.value)
 
+  pendingItemId.value = item.id
   try {
-    if (assignedByMe) {
-      await api.delete(`/items/${item.id}/assign`)
-    } else {
-      await api.post(`/items/${item.id}/assign`, { quantity: 1 })
-    }
+    const updated = assignedByMe
+      ? await api.delete(`/items/${item.id}/assign`)
+      : await api.post(`/items/${item.id}/assign`, { quantity: 1 })
+
+    // бекенд повертає повний ItemResponse — оновлюємо лише цю річ у списку,
+    // не перезавантажуючи весь чекліст
+    applyItemUpdate(updated)
+    await refreshTripStats()
   } catch (error) {
     toast.error(error.message)
+    // Навіть при помилці синхронізуємо список, щоб чекбокс повернувся
+    // до фактичного стану на сервері.
+    await reloadItemsAndStats()
+  } finally {
+    if (pendingItemId.value === item.id) pendingItemId.value = null
   }
-
-  // Оновлюємо статистику та весь список речей (пагінації немає).
-  // Навіть при помилці пере-завантажуємо список, щоб чекбокс повернувся
-  // до фактичного стану на сервері.
-  const [freshTrip] = await Promise.all([
-    api.get(`/trips/${tripId}`),
-    fetchItems()
-  ])
-  trip.value = freshTrip
-  historyVersion.value += 1
 }
 
 // Зміна своєї кількості через степер (лише для своєї позначки)
 const changeMyQuantity = async ({ itemId, quantity }) => {
+  pendingItemId.value = itemId
   try {
-    if (quantity <= 0) await api.delete(`/items/${itemId}/assign`)
-    else await api.post(`/items/${itemId}/assign`, { quantity })
+    const updated = quantity <= 0
+      ? await api.delete(`/items/${itemId}/assign`)
+      : await api.post(`/items/${itemId}/assign`, { quantity })
+    applyItemUpdate(updated)
+    await refreshTripStats()
   } catch (error) {
     toast.error(error.message)
+    await reloadItemsAndStats()
+  } finally {
+    if (pendingItemId.value === itemId) pendingItemId.value = null
   }
-  const [freshTrip] = await Promise.all([api.get(`/trips/${tripId}`), fetchItems()])
-  trip.value = freshTrip
-  historyVersion.value += 1
 }
 
 // Зняти річ, яку взяв інший учасник, — доступно тільки організатору поїздки
 const unassignOther = async ({ item, user }) => {
+  pendingItemId.value = item.id
   try {
-    await api.delete(`/items/${item.id}/assign?user_id=${user.id}`)
+    const updated = await api.delete(`/items/${item.id}/assign?user_id=${user.id}`)
     toast.success(`Позначку ${user.username} знято. Річ знову вільна.`)
+    applyItemUpdate(updated)
+    await refreshTripStats()
   } catch (error) {
     toast.error(error.message)
-    return
+    await reloadItemsAndStats()
+  } finally {
+    if (pendingItemId.value === item.id) pendingItemId.value = null
   }
-
-  const [freshTrip] = await Promise.all([
-    api.get(`/trips/${tripId}`),
-    fetchItems()
-  ])
-  trip.value = freshTrip
-  historyVersion.value += 1
 }
 
 // Зміна кількості після створення (тільки автор або організатор)
@@ -452,7 +519,7 @@ const deleteTrip = async () => {
   if (!confirm('УВАГА! Ти дійсно хочеш видалити цю поїздку назавжди?')) return
 
   try {
-    await api.delete(`/trips/${tripId}`)
+    await api.delete(`/trips/${tripId.value}`)
     router.push('/')
   } catch (error) {
     toast.error(error.message)
@@ -467,7 +534,7 @@ const renameTrip = async (newTitle) => {
   }
 
   try {
-    await api.patch(`/trips/${tripId}`, { title: newTitle.trim() })
+    await api.patch(`/trips/${tripId.value}`, { title: newTitle.trim() })
 
     await fetchTripData()
     toast.success('Поїздку перейменовано.')
@@ -481,7 +548,7 @@ const archiveTrip = async () => {
   if (!confirm('Архівувати поїздку? Вона зникне зі списку активних, але всі дані збережуться.')) return
 
   try {
-    const fresh = await api.post(`/trips/${tripId}/archive`)
+    const fresh = await api.post(`/trips/${tripId.value}/archive`)
     trip.value = fresh
     toast.success('Поїздку заархівовано.')
   } catch (error) {
@@ -491,7 +558,7 @@ const archiveTrip = async () => {
 
 const unarchiveTrip = async () => {
   try {
-    const fresh = await api.post(`/trips/${tripId}/unarchive`)
+    const fresh = await api.post(`/trips/${tripId.value}/unarchive`)
     trip.value = fresh
     toast.success('Поїздку повернуто з архіву.')
   } catch (error) {
@@ -502,7 +569,7 @@ const unarchiveTrip = async () => {
 // Зміна дат поїздки (тільки організатор)
 const changeTripDates = async ({ start_date, end_date }) => {
   try {
-    const fresh = await api.patch(`/trips/${tripId}`, { start_date, end_date })
+    const fresh = await api.patch(`/trips/${tripId.value}`, { start_date, end_date })
     trip.value = fresh
     toast.success('Дати поїздки збережено.')
   } catch (error) {
@@ -510,15 +577,42 @@ const changeTripDates = async ({ start_date, end_date }) => {
   }
 }
 
-onMounted(async () => {
+const fetchCurrentUser = async () => {
   try {
     const me = await api.get('/users/me')
-    currentUser.value = me.username
+    currentUserId.value = me?.id ?? null
   } catch {
     // 401 — api сам перекидає на /login
   }
+}
+
+const loadTrip = async () => {
+  const seq = ++tripSeq.value
+  isLoading.value = true
+  await fetchCurrentUser()
+  if (seq !== tripSeq.value) return
   await fetchTripData()
+}
+
+// переміщення між поїздками без розмонтування компонента (меню, посилання) —
+// скидаємо старий стан (помилки, пошук, вкладку, вибір) і вантажимо нову поїздку.
+// Фільтри списку скидаються перемонтуванням TripItemList через :key="tripId".
+watch(() => route.params.id, () => {
+  trip.value = null
+  categories.value = []
+  items.value = []
+  itemSearchInput.value = ''
+  itemQ.value = ''
+  errorMessage.value = ''
+  accessError.value = false
+  activeTab.value = 'items'
+  historyVersion.value = 0
+  showCopyModal.value = false
+  categoryToDelete.value = null
+  loadTrip()
 })
+
+onMounted(loadTrip)
 
 </script>
 
@@ -542,7 +636,7 @@ onMounted(async () => {
       <!-- header -->
       <TripHeader 
         :trip="trip" 
-        :currentUser="currentUser" 
+        :currentUserId="currentUserId" 
         :isParticipant="isParticipant"
         :is-archived="isArchived"
         @leave="leaveTrip"
@@ -565,8 +659,8 @@ onMounted(async () => {
       <!-- учасники -->
       <TripParticipants 
         :participants="trip.participants"
-        :ownerUsername="trip.owner?.username"
-        :currentUser="currentUser"
+        :owner-id="trip.owner?.id"
+        :current-user-id="currentUserId"
         :is-archived="isArchived"
         @remove="removeParticipant"
         @transfer="transferOwnership"
@@ -595,6 +689,8 @@ onMounted(async () => {
         <TripItemForm
           v-if="!isArchived"
           :categories="categories"
+          :is-adding-item="isAddingItem"
+          :is-creating-category="isCreatingCategory"
           @add-item="addItem"
           @create-category="createCategory"
         />
@@ -608,11 +704,13 @@ onMounted(async () => {
 
         <!-- список речей -->
         <TripItemList
+          :key="tripId"
           :groupedItems="groupedItems"
           :categories="categories"
-          :currentUser="currentUser"
-          :ownerUsername="trip.owner?.username"
+          :current-user-id="currentUserId"
+          :owner-id="trip.owner?.id"
           :is-archived="isArchived"
+          :pending-item-id="pendingItemId"
           @toggle="toggleItemAssignment"
           @unassign-other="unassignOther"
           @update-my-quantity="changeMyQuantity"
@@ -663,6 +761,7 @@ onMounted(async () => {
         v-if="showCopyModal"
         :trips="copySourceTrips"
         :is-loading="isCopyModalLoading"
+        :is-copying="isCopyingTrip"
         @close="showCopyModal = false"
         @copy="handleCopyItems"
       />

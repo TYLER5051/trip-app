@@ -100,7 +100,6 @@ def change_profile(
 
     try:
         db.commit()
-        db.refresh(user)
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Користувач із таким ім'ям вже існує")

@@ -11,7 +11,7 @@ const route = useRoute()
 // синхронізуємо його з localStorage (на випадок змін поза стори).
 watch(() => route.path, () => {
   auth.syncFromStorage()
-})
+}, { immediate: true })
 
 const handleLogout = async () => {
   // Спочатку серверний логаут: інкрементуємо token_version, щоб JWT

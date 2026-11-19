@@ -1,9 +1,26 @@
 <script setup>
-defineProps({
+import { ref } from 'vue'
+
+const props = defineProps({
   trips: { type: Array, required: true },
-  isLoading: { type: Boolean, default: false }
+  isLoading: { type: Boolean, default: false },
+  isCopying: { type: Boolean, default: false }
 })
-defineEmits(['close', 'copy'])
+const emit = defineEmits(['close', 'copy'])
+
+// поки йде копіювання — блокуємо кнопку, щоб подвійний клік не створив
+// дублікати речей
+const copyBusyId = ref(null)
+
+const handleCopy = (id) => {
+  if (props.isCopying || copyBusyId.value !== null) return
+  copyBusyId.value = id
+  try {
+    emit('copy', id)
+  } finally {
+    copyBusyId.value = null
+  }
+}
 </script>
 
 <template>
@@ -32,7 +49,13 @@ defineEmits(['close', 'copy'])
               <span v-if="t.is_archived" class="archived-badge">архів</span>
             </div>
           </div>
-          <button class="copy-btn" @click="$emit('copy', t.id)">Наслідувати</button>
+          <button
+            class="copy-btn"
+            :disabled="props.isCopying || copyBusyId !== null"
+            @click="handleCopy(t.id)"
+          >
+            {{ props.isCopying ? 'Копіюємо...' : 'Наслідувати' }}
+          </button>
         </li>
       </ul>
 
