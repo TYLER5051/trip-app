@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from typing import List, Optional
+from decimal import Decimal
 import datetime
 import json
 
@@ -200,8 +201,118 @@ class ActivityResponse(BaseModel):
             except (json.JSONDecodeError, TypeError):
                 return None
         return d
+    
 class ActivityListResponse(BaseModel):
     items: List[ActivityResponse]
     total: int
     limit: int
     offset: int
+
+class ContributionCreate(BaseModel):
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    note: str | None = Field(default=None, max_length=200)
+
+class ContributionUpdate(BaseModel):
+    amount: Optional[Decimal] = Field(gt=0, max_digits=12, decimal_places=2)
+    note: Optional[str] = Field(default=None, max_length=200)
+
+class ContributionResponse(BaseModel):
+    id: int
+    user: UserResponse | None
+    amount: Decimal
+    note: str | None
+    created_at: datetime.datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class ExpenseShareRequest(BaseModel):
+    user_id: int
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+
+class ExpenseShareResponse(BaseModel):
+    user: UserResponse | None
+    amount: Decimal
+
+class ExpenseCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    paid_from_pool: bool = True
+    paid_by_user_id: int | None = None
+    shares: list[ExpenseShareRequest] = Field(min_length=1)
+    note: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def check_model(self):
+        user_ids = [s.user_id for s in self.shares]
+        if len(set(user_ids)) < len(user_ids):
+            raise ValueError("Користувачі у частках мають бути унікальними")
+        if sum((s.amount for s in self.shares), Decimal("0.00")) != self.amount:
+            raise ValueError("Сума часток має дорівнювати загальній сумі витрати")
+        if self.paid_from_pool is False and self.paid_by_user_id is None:
+            raise ValueError("Для особистої оплати потрібно вказати платника")
+        return self
+    
+class ExpenseUpdate(BaseModel):
+    name: Optional[str] = Field(min_length=2, max_length=100, default=None)
+    amount: Optional[Decimal] = Field(gt=0, max_digits=12, decimal_places=2, default=None)
+    paid_from_pool: Optional[bool] = None
+    paid_by_user_id: Optional[int] = None
+    shares: Optional[list[ExpenseShareRequest]] = Field(min_length=1, default=None)
+    note: Optional[str] = Field(default=None, max_length=200)
+    
+    @model_validator(mode="after")
+    def check_model(self):
+        if self.shares is not None:
+            user_ids = [s.user_id for s in self.shares]
+            if len(set(user_ids)) < len(user_ids):
+                raise ValueError("Користувачі у частках мають бути унікальними")
+            if self.amount is not None and sum((s.amount for s in self.shares), Decimal("0.00")) != self.amount:
+                raise ValueError("Сума часток має дорівнювати загальній сумі витрати")
+        if self.paid_from_pool is False and self.paid_by_user_id is None:
+            raise ValueError("Для особистої оплати потрібно вказати платника")
+        return self
+
+class ExpenseResponse(BaseModel):
+    id: int
+    name: str
+    amount: Decimal
+    paid_from_pool: bool
+    paid_by_user: UserResponse | None
+    shares: list[ExpenseShareResponse]
+    note: str | None
+    created_at: datetime.datetime
+    created_by: UserResponse | None
+    model_config = ConfigDict(from_attributes=True)
+
+class ParticipantBalance(BaseModel):
+    user: UserResponse | None
+    contributed: Decimal
+    paid_by_self: Decimal
+    share_costs: Decimal
+    net: Decimal
+
+class DeleteUsersSummary(BaseModel):
+    contributed: Decimal
+    share_costs: Decimal
+    net: Decimal
+
+class BudgetOverviewResponse(BaseModel):
+    bank_balance: Decimal
+    total_contributions: Decimal
+    total_expenses: Decimal
+    participants: list[ParticipantBalance]
+    deleted_users: DeleteUsersSummary
+
+class SettlementTransfer(BaseModel):
+    from_user: UserResponse
+    to_user: UserResponse
+    amount: Decimal
+
+class BankPayout(BaseModel):
+    user: UserResponse
+    amount: Decimal
+
+class SettlementResponse(BaseModel):
+    bank_balance: Decimal
+    transfers: list[SettlementTransfer]
+    bank_payouts: list[BankPayout]
+    deleted_users_note: str | None = None

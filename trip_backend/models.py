@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint, Index, CheckConstraint
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Table, UniqueConstraint, Index, CheckConstraint, Numeric, text
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
@@ -48,6 +48,8 @@ class Trip(Base):
     participants = relationship("User", secondary=trip_users, back_populates="participating_trips")
     items = relationship("Item", back_populates="trip", cascade="all, delete", passive_deletes=True)
     categories = relationship("Category", back_populates="trip", cascade="all, delete", passive_deletes=True)
+    contributions = relationship("Contribution", back_populates="trip", cascade="all, delete", passive_deletes=True)
+    expenses = relationship("Expense", back_populates="trip", cascade="all, delete", passive_deletes=True)
 
 class Category(Base):
     __tablename__ = "categories"
@@ -107,3 +109,58 @@ class Activity(Base):
 
     trip = relationship("Trip")
     actor = relationship("User")
+
+class Contribution(Base):
+    __tablename__ = "contributions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_contributions_amount_positive"),
+        Index("ix_contributions_trip_created", "trip_id", "created_at")    
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    note = Column(String(length=200), nullable=True,)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    trip = relationship("Trip", back_populates="contributions")
+    user = relationship("User", foreign_keys=[user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+class Expense(Base):
+    __tablename__ = "expenses"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),
+        Index("ix_expenses_trip_created", "trip_id", "created_at")
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(length=100), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    paid_from_pool = Column(Boolean, nullable=False, default=True)
+    paid_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String(length=200), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    shares = relationship("ExpenseShare", back_populates="expense", cascade="all, delete-orphan", passive_deletes=True)
+    trip = relationship("Trip", back_populates="expenses")
+    paid_by_user = relationship("User", foreign_keys=[paid_by_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+class ExpenseShare(Base):
+    __tablename__ = "expense_shares"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expense_shares_amount_positive"),
+        Index("ix_expense_shares_expense_user", "expense_id", "user_id", unique=True, postgresql_where=text("user_id IS NOT NULL"))
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    expense = relationship("Expense", back_populates="shares")
+    user = relationship("User")
