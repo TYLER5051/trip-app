@@ -144,6 +144,11 @@ def delete_account(
 
     db.query(models.Item).filter(models.Item.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
     db.query(models.Category).filter(models.Category.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+    db.query(models.Contribution).filter(models.Contribution.user_id == current_user.id).update({"user_id": None}, synchronize_session=False)
+    db.query(models.Contribution).filter(models.Contribution.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
+    db.query(models.ExpenseShare).filter(models.ExpenseShare.user_id == current_user.id).update({"user_id": None}, synchronize_session=False)
+    db.query(models.Expense).filter(models.Expense.paid_by_user_id == current_user.id).update({"paid_by_user_id": None}, synchronize_session=False)
+    db.query(models.Expense).filter(models.Expense.created_by_id == current_user.id).update({"created_by_id": None}, synchronize_session=False)
 
     trips = db.query(models.Trip).filter(models.Trip.owner_id == current_user.id).all()
     for trip in trips:
@@ -152,6 +157,8 @@ def delete_account(
     db.query(models.ItemAssignment).filter(
         models.ItemAssignment.user_id == current_user.id
     ).delete(synchronize_session=False)
+
+    db.flush()
 
     db.delete(current_user)
     db.commit()

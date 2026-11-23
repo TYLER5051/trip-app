@@ -29,7 +29,7 @@ main.app.state.limiter.enabled = False
 
 # Таблиці, які будемо чистити перед кожним тестом.
 # Порядок важливий: спочатку залежні таблиці, потім батьківські.
-TABLES = ["activities", "item_assignments", "items", "categories", "trip_users", "trips", "users"]
+TABLES = ["activities", "expense_shares", "expenses", "contributions", "item_assignments", "items", "categories", "trip_users", "trips", "users"]
 
 
 def _cleanup():
@@ -37,7 +37,7 @@ def _cleanup():
     with engine.begin() as conn:
         for table in TABLES:
             conn.execute(text(f"DELETE FROM {table}"))
-        for table in ["items", "categories", "trips", "users"]:
+        for table in ["items", "categories", "trips", "users", "contributions", "expenses", "expense_shares"]:
             conn.execute(text(
                 "SELECT setval(pg_get_serial_sequence('{t}', 'id'), "
                 "COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM {t}".format(t=table)

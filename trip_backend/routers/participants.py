@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, or_
 from database import get_db
 from deps import get_current_user, user_is_member, get_owned_trip, ensure_active_trip
 from rate_limit import limiter
@@ -11,6 +11,53 @@ import models, schemas
 import secrets
 router = APIRouter(prefix="/trips")
 
+def _ensure_no_budget_records(
+    db: Session,
+    trip_id: int,
+    user_id: int
+):
+    has_contribution = (
+        db.query(models.Contribution)
+        .filter(
+            models.Contribution.trip_id == trip_id,
+            or_(
+                models.Contribution.user_id == user_id,
+                models.Contribution.created_by_id == user_id
+            )
+        )
+        .first()
+        is not None
+    )
+
+    has_expense = (
+        db.query(models.Expense)
+        .filter(
+            models.Expense.trip_id == trip_id,
+            or_(
+                models.Expense.paid_by_user_id == user_id,
+                models.Expense.created_by_id == user_id
+            )
+        )
+        .first()
+        is not None
+    )
+
+    has_share = (
+        db.query(models.ExpenseShare)
+        .join(
+            models.Expense,
+            models.Expense.id == models.ExpenseShare.expense_id
+        )
+        .filter(
+            models.ExpenseShare.user_id == user_id,
+            models.Expense.trip_id == trip_id
+        )
+        .first()
+        is not None
+    )
+
+    if has_contribution or has_expense or has_share:
+        raise HTTPException(status_code=409, detail="Спочатку врегулюйте фінанси учасника (внески/частки)")
 
 @router.get("/{trip_id}/invite", response_model=schemas.InviteTokenResponse)
 @limiter.limit("60/minute")
@@ -122,6 +169,8 @@ def remove_participant(
     if not user_to_remove or not user_is_member(db, trip, user_to_remove.id):
         raise HTTPException(status_code=404, detail="Учасника не знайдено в цій поїздці")
 
+    _ensure_no_budget_records(db, trip_id, user_id)
+
     db.execute(
         delete(models.trip_users).where(
             models.trip_users.c.trip_id == trip.id,
@@ -162,6 +211,8 @@ def leave_trip(
 
     if trip.owner_id == current_user.id:
         raise HTTPException(status_code=400, detail="Організатор не може вийти, він може лише видалити поїздку")
+
+    _ensure_no_budget_records(db, trip_id, current_user.id)
 
     db.execute(
         delete(models.trip_users).where(

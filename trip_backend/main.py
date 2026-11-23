@@ -17,6 +17,7 @@ from routers.authentication import router as auth_router
 from routers.trips import router as trips_router
 from routers.users import router as users_router
 from routers.activity import router as activity_router
+from routers.budget import router as budget_router
 
 logger = logging.getLogger("trip_api")
 logging.basicConfig(
@@ -80,6 +81,7 @@ app.include_router(auth_router)
 app.include_router(trips_router)
 app.include_router(users_router)
 app.include_router(activity_router)
+app.include_router(budget_router)
 
 @app.get("/")
 def read_root():
