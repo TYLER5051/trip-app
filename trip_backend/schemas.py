@@ -231,6 +231,7 @@ class ExpenseShareRequest(BaseModel):
 class ExpenseShareResponse(BaseModel):
     user: UserResponse | None
     amount: Decimal
+    model_config = ConfigDict(from_attributes=True)
 
 class ExpenseCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
@@ -282,6 +283,13 @@ class ExpenseResponse(BaseModel):
     created_at: datetime.datetime
     created_by: UserResponse | None
     model_config = ConfigDict(from_attributes=True)
+
+class BudgetListResponse(BaseModel):
+    contributions: list[ContributionResponse]
+    expenses: list[ExpenseResponse]
+    total: int
+    limit: int
+    offset: int
 
 class ParticipantBalance(BaseModel):
     user: UserResponse | None
