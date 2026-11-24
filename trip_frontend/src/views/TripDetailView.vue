@@ -9,6 +9,7 @@ import TripItemForm from './TripItemForm.vue'
 import TripItemList from './TripItemList.vue'
 import TripCopyItems from './TripCopyItems.vue'
 import ActivityFeed from '../components/ActivityFeed.vue'
+import TripBudget from './TripBudget.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -194,6 +195,20 @@ const packingPercent = computed(() => {
   if (!total) return 0
   return Math.round(((trip.value?.packed_items || 0) / total) * 100)
 })
+
+// Всі учасники бюджету: звичайні учасники + організатор (його у participants НЕМАЄ)
+const members = computed(() => {
+  const seen = new Map()
+  ;[...(trip.value?.participants || []), trip.value?.owner].forEach(u => {
+    if (u && !seen.has(u.id)) seen.set(u.id, u)
+  })
+  return [...seen.values()]
+})
+
+// Після змін у бюджеті оновлюємо стрічку дій (вкладка «Історія»)
+const budgetChanged = () => {
+  historyVersion.value += 1
+}
 
 // ---- Наслідування речей з минулої поїздки ----
 const showCopyModal = ref(false)
@@ -682,6 +697,13 @@ onMounted(loadTrip)
         >
           Історія
         </button>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'budget' }"
+          @click="activeTab = 'budget'"
+        >
+          💰 Бюджет
+        </button>
       </div>
 
       <div v-if="activeTab === 'items'">
@@ -724,8 +746,19 @@ onMounted(loadTrip)
         />
       </div>
 
-      <div v-else class="history-card">
+      <div v-else-if="activeTab === 'history'" class="history-card">
         <ActivityFeed :trip-id="Number(tripId)" :refresh-key="historyVersion" />
+      </div>
+
+      <div v-else-if="activeTab === 'budget'">
+        <TripBudget
+          :trip-id="Number(tripId)"
+          :members="members"
+          :current-user-id="currentUserId"
+          :owner-id="trip.owner?.id"
+          :is-archived="isArchived"
+          @changed="budgetChanged"
+        />
       </div>
 
       <!-- модалка видалення категорії -->

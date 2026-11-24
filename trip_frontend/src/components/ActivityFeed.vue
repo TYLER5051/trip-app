@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import api from '../services/api'
 import UserAvatar from './UserAvatar.vue'
+import { formatMoney } from '../utils/money'
 
 const props = defineProps({
   // Без tripId — стрічка профілю (/users/me/activities), з tripId — стрічка поїздки.
@@ -72,6 +73,18 @@ function actionText(act) {
       return `створив поїздку ${quote(d.title)}`
     case 'participant_joined':
       return 'приєднався до поїздки'
+    case 'contribution_added':
+      return `вніс у банк ${formatMoney(d.amount)}`
+    case 'contribution_updated':
+      return `змінив внесок на ${formatMoney(d.amount)}`
+    case 'contribution_deleted':
+      return `скасував внесок ${formatMoney(d.amount)}`
+    case 'expense_added':
+      return `додав витрату ${quote(d.name)} на ${formatMoney(d.amount)}`
+    case 'expense_updated':
+      return `змінив витрату ${quote(d.name)} — тепер ${formatMoney(d.amount)}`
+    case 'expense_deleted':
+      return `видалив витрату ${quote(d.name)} (${formatMoney(d.amount)})`
     default:
       return act.action
   }
