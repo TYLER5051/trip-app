@@ -366,7 +366,12 @@ def create_contribution(
     db.flush()
     log_activity(db, trip.id, current_user.id, "contribution_added",
                  {"contribution_id": contribution.id, "amount": str(contribution.amount)})
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Дані змінилися, спробуйте ще раз")
+    
     db.refresh(contribution)
     return contribution
 
@@ -402,7 +407,13 @@ def update_contribution(
 
     log_activity(db, trip.id, current_user.id, "contribution_updated",
                  {"contribution_id": contribution.id, "amount": str(contribution.amount)})
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Дані змінилися, спробуйте ще раз")
+
     db.refresh(contribution)
     return contribution
 
@@ -491,6 +502,9 @@ def update_expense(
     expense = _get_expense(db, trip.id, expense_id, for_update=True)
     if not _can_manage(current_user, trip, expense):
         raise HTTPException(status_code=403, detail="Ви можете змінювати лише власні витрати (або організатор)")
+
+    if any(s.user_id is None for s in expense.shares) or (not expense.paid_from_pool and expense.paid_by_user_id is None):
+        raise HTTPException(status_code=400, detail="Не можна редагувати витрату за участю видалених користувачів")
 
     fields = payload.model_dump(exclude_unset=True)
     if not fields:

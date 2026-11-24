@@ -99,7 +99,7 @@ const submit = () => {
     shares: checkedRows.value.map(r => ({ user_id: r.user_id, amount: toDecimalString(r.amount) }))
   }
   if (!paidFromPool.value) payload.paid_by_user_id = Number(paidByUserId.value)
-  if (note.value.trim()) payload.note = note.value.trim()
+  payload.note = note.value.trim() || null
   emit('save', payload)
 }
 </script>

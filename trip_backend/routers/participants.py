@@ -169,6 +169,7 @@ def remove_participant(
     if not user_to_remove or not user_is_member(db, trip, user_to_remove.id):
         raise HTTPException(status_code=404, detail="Учасника не знайдено в цій поїздці")
 
+    db.query(models.Trip).filter(models.Trip.id == trip.id).with_for_update().first()
     _ensure_no_budget_records(db, trip_id, user_id)
 
     db.execute(
@@ -212,6 +213,7 @@ def leave_trip(
     if trip.owner_id == current_user.id:
         raise HTTPException(status_code=400, detail="Організатор не може вийти, він може лише видалити поїздку")
 
+    db.query(models.Trip).filter(models.Trip.id == trip_id).with_for_update().first()
     _ensure_no_budget_records(db, trip_id, current_user.id)
 
     db.execute(

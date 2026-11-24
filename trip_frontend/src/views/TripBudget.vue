@@ -50,6 +50,11 @@ const canManageContribution = (c) =>
 const canManageExpense = (e) =>
   props.currentUserId === props.ownerId || props.currentUserId === e.created_by?.id
 
+const canEditExpense = (e) =>
+  canManageExpense(e) &&
+  !(e.shares || []).some(s => !s.user) &&
+  (e.paid_from_pool || !!e.paid_by_user)
+
 function formatDate(iso) {
   return new Date(iso).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })
 }
@@ -347,7 +352,7 @@ onMounted(loadBudget)
                 </div>
               </div>
               <div v-if="!isArchived && canManageExpense(e)" class="entry-actions">
-                <button class="icon-btn" title="Редагувати" @click="openEditExpense(e)">✏️</button>
+                <button v-if="canEditExpense(e)" class="icon-btn" title="Редагувати" @click="openEditExpense(e)">✏️</button>
                 <button class="icon-btn" title="Видалити" :disabled="isDeleting" @click="deleteExpense(e)">🗑️</button>
               </div>
             </li>

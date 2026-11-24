@@ -141,3 +141,30 @@ def test_delete_owner_cascades_budget(client, auth_headers):
     r = client.get("/trips/", headers=user)
     assert r.status_code == 200
     assert r.json()["total"] == 0
+
+
+def test_edit_expense_with_deleted_user_share_blocked(client, auth_headers):
+    org = auth_headers("org_d")
+    user = auth_headers("user_d")
+    trip = create_trip(client, org)
+    join_trip(client, trip["id"], user, org)
+    uid = user_id_of(client, trip["id"], "user_d", org)
+
+    add_contribution(client, trip["id"], "300.00", org)
+    add_expense(client, trip["id"], user, "Особисте", "50.00",
+                [{"user_id": uid, "amount": "50.00"}],
+                paid_from_pool=False, paid_by_user_id=uid)
+
+    assert delete_account(client, user).status_code == 200
+
+    e = budget_list(client, trip["id"], org)["expenses"][0]
+    assert e["shares"][0]["user"] is None  # платник і частка видалені
+
+    # редагування витрати з часткою/платником видаленого користувача заборонене (400)
+    r = client.patch(f"/trips/{trip['id']}/budget/expenses/{e['id']}", json={"name": "Нове"}, headers=org)
+    assert r.status_code == 400
+    assert "видалених" in r.json()["detail"]
+
+    # видалення такої витрати — дозволено
+    r = client.delete(f"/trips/{trip['id']}/budget/expenses/{e['id']}", headers=org)
+    assert r.status_code == 200
